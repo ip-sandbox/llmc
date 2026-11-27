@@ -63,10 +63,17 @@ def test_jobs(rep: Report, W) -> None:
             ok = wait_file(out, 20)
             res = json.loads(out.read_text(encoding="utf-8")) if ok else {"ok": None, "error": "応答なし"}
             expect = flags & W.JOB_OBJECT_LIMIT_BREAKAWAY_OK != 0
-            status = "OK" if res.get("ok") == expect else "WARN"
-            rep.add(sec, f"CREATE_BREAKAWAY_FROM_JOB（{label}）", status, res)
-            W.CloseHandle(job)  # KILL_ON_JOB_CLOSE で補助プロセスも終わる
+            W.TerminateJobObject(job, 1)
+            W.CloseHandle(job)
             p.wait(10)
+            time.sleep(1)
+            gc = res.get("grandchild")
+            res["ジョブ終了後も孫が生存（実際に切り離された）"] = bool(gc) and W.process_alive(gc)
+            if gc and W.process_alive(gc):
+                subprocess.run(["taskkill", "/F", "/PID", str(gc)], capture_output=True)
+            actual = res["ジョブ終了後も孫が生存（実際に切り離された）"]
+            status = "OK" if actual == expect else "WARN"
+            rep.add(sec, f"CREATE_BREAKAWAY_FROM_JOB（{label}）", status, res)
         except Exception as e:  # noqa: BLE001
             rep.add(sec, f"CREATE_BREAKAWAY_FROM_JOB（{label}）", "NG", first_line(e))
 

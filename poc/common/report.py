@@ -16,12 +16,13 @@ _REDACT_ENV = ("LOCALAPPDATA", "APPDATA", "OneDriveCommercial", "OneDriveConsume
                "USERPROFILE", "HOMEPATH", "TEMP", "TMP", "USERDOMAIN", "COMPUTERNAME", "USERNAME")
 
 _extra: list[tuple[str, str]] = []
+_raw: list[tuple[str, str]] = []  # 境界を問わずに置き換える値（SID など）
 
 
 def add_redaction(value: str, label: str) -> None:
     """環境変数以外の秘匿すべき値（SID など）を登録する。"""
     if value and len(value) >= 3:
-        _extra.append((value, label))
+        _raw.append((value, label))
 
 
 def _pairs() -> list[tuple[str, str]]:
@@ -30,22 +31,36 @@ def _pairs() -> list[tuple[str, str]]:
         v = os.environ.get(k)
         if v and len(v) >= 3:
             pairs.append((v, f"<{k}>"))
-            pairs.append((v.replace("\\", "/"), f"<{k}>"))
+            if "\\" in v:
+                pairs.append((v.replace("\\", "/"), f"<{k}>"))
+                pairs.append((v.replace("\\", "\\\\"), f"<{k}>"))  # repr で二重になった \\
     pairs.sort(key=lambda p: -len(p[0]))
     return pairs
 
 
 def redact(obj):
     if isinstance(obj, str):
-        s = obj
-        for v, label in _pairs():
-            s = re.sub(re.escape(v), label, s, flags=re.IGNORECASE)
-        return s
+        for i, (v, _label) in enumerate(_raw):
+            obj = re.sub(re.escape(v), f"\x00{i}\x00", obj, flags=re.IGNORECASE)
+        pairs = _pairs()
+        if pairs:
+            obj = _sub_pairs(obj, pairs)
+        for i, (_v, label) in enumerate(_raw):
+            obj = obj.replace(f"\x00{i}\x00", label)
+        return obj
     if isinstance(obj, dict):
         return {redact(k): redact(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         return [redact(v) for v in obj]
     return obj
+
+
+def _sub_pairs(obj: str, pairs) -> str:
+    # 1 回の走査でまとめて置き換える（置き換えた結果をさらに置き換えないため）。
+    # 英数字に挟まれた一致は置き換えない（USERNAME=user が Users に当たるのを防ぐ）
+    pat = re.compile("|".join(f"(?<![A-Za-z0-9]){re.escape(v)}(?![A-Za-z0-9])" for v, _ in pairs), re.IGNORECASE)
+    table = {v.lower(): label for v, label in pairs}
+    return pat.sub(lambda m: table.get(m.group(0).lower(), "<REDACTED>"), obj)
 
 
 def first_line(e: BaseException, limit: int = 300) -> str:

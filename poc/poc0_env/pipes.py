@@ -35,15 +35,30 @@ def judge_bytes(data: bytes, expect_enc: str | None = None) -> tuple[str, str]:
     return "NG", f"文字化け（先頭のバイト列 {data[:24].hex()} / UTF-8 として表示 {preview!r}）"
 
 
-def run_ps(script: str, timeout: int = 60) -> subprocess.CompletedProcess:
+# 利用者の PC の既定に近づけるため、Python の文字コードを変える環境変数を外して子プロセスを動かす
+CLEAN_ENV = {k: v for k, v in os.environ.items()
+             if k.upper() not in ("PYTHONIOENCODING", "PYTHONUTF8", "PYTHONLEGACYWINDOWSSTDIO")}
+
+
+# True: 新しい（見えない）コンソールで動かす。コードページはシステムの既定（日本語版 Windows では 932）になる
+NEW_CONSOLE = False
+CREATE_NO_WINDOW = 0x08000000
+
+
+def _flags() -> int:
+    return CREATE_NO_WINDOW if NEW_CONSOLE else 0
+
+
+def run_ps(script: str, timeout: int = 60, env=None) -> subprocess.CompletedProcess:
     enc = base64.b64encode(script.encode("utf-16-le")).decode()
     return subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", enc],
-                          capture_output=True, timeout=timeout)
+                          capture_output=True, timeout=timeout, env=env or CLEAN_ENV, creationflags=_flags())
 
 
-def run_cmd(inner: str, timeout: int = 60) -> subprocess.CompletedProcess:
+def run_cmd(inner: str, timeout: int = 60, env=None) -> subprocess.CompletedProcess:
     # 文字列で渡すと、Python はそのままコマンドラインとして CreateProcess に渡す
-    return subprocess.run(f'cmd.exe /d /s /c "{inner}"', capture_output=True, timeout=timeout)
+    return subprocess.run(f'cmd.exe /d /s /c "{inner}"', capture_output=True, timeout=timeout,
+                          env=env or CLEAN_ENV, creationflags=_flags())
 
 
 def q_ps(path: str) -> str:
@@ -51,14 +66,33 @@ def q_ps(path: str) -> str:
 
 
 def run_all(rep: Report) -> None:
+    global NEW_CONSOLE
+    for mode in (False, True):
+        NEW_CONSOLE = mode
+        _run_all(rep, "（新しいコンソール・既定のコードページ）" if mode else "（このコンソール）")
+
+
+def _console_cp(runner) -> str:
+    try:
+        cp = run_cmd("chcp")
+        return cp.stdout.decode("cp932", "replace").strip()
+    except Exception as e:  # noqa: BLE001
+        return first_line(e)
+
+
+def _run_all(rep: Report, suffix: str) -> None:
     work = OUT_DIR / "pipes"
     work.mkdir(parents=True, exist_ok=True)
     utf8_file = work / "sample_utf8.txt"
     utf8_file.write_bytes(TEXT.encode("utf-8") + b"\r\n")
-    sec = "パイプとリダイレクト（H-10）"
+    sec = "パイプとリダイレクト（H-10）" + suffix
+    rep.add(sec, "子プロセスのコードページ", "INFO", _console_cp(run_cmd))
+    removed = sorted(set(os.environ) - set(CLEAN_ENV))
+    rep.add(sec, "子プロセスから外した環境変数", "INFO", ", ".join(removed) or "なし")
+    counter = iter(range(100 if NEW_CONSOLE else 1, 1000))
 
     def via_echo(label, runner, build, expect=None, note=""):
-        out = work / f"{label}.json"
+        out = work / f"t{next(counter):02d}.json"
         if out.exists():
             out.unlink()
         try:
@@ -75,7 +109,7 @@ def run_all(rep: Report) -> None:
         rep.add(sec, label, status, (note + " → " if note else "") + msg)
 
     def via_file(label, runner, build, note=""):
-        out = work / f"{label}.txt"
+        out = work / f"t{next(counter):02d}.txt"
         if out.exists():
             out.unlink()
         try:
@@ -119,7 +153,6 @@ def run_all(rep: Report) -> None:
     via_file("cmd-python(utf8) > ファイル", run_cmd, lambda o: f'"{PY}" "{EMIT}" utf-8 > "{o}"')
 
     # Python の UTF-8 モード
-    env = dict(os.environ, PYTHONUTF8="1")
-    via_echo("cmd-python(既定の出力, PYTHONUTF8=1)|python",
-             lambda c: subprocess.run(c, capture_output=True, timeout=60, env=env),
-             lambda o: f'cmd.exe /d /s /c ""{PY}" "{EMIT}" default | "{PY}" "{ECHO}" "{o}""', expect="UTF-8")
+    env = dict(CLEAN_ENV, PYTHONUTF8="1")
+    via_echo("cmd-python(既定の出力, PYTHONUTF8=1)|python", lambda c: run_cmd(c, env=env),
+             lambda o: f'"{PY}" "{EMIT}" default | "{PY}" "{ECHO}" "{o}"', expect="UTF-8")

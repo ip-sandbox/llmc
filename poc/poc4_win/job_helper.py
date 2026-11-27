@@ -19,10 +19,10 @@ wait_for(go)
 if mode == "breakaway":
     res = {}
     try:
-        p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(1)"],
+        p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"],
                              creationflags=0x01000000 | 0x00000008)  # BREAKAWAY_FROM_JOB | DETACHED_PROCESS
-        p.wait(10)
         res["ok"] = True
+        res["grandchild"] = p.pid
     except OSError as e:
         res["ok"] = False
         res["winerror"] = getattr(e, "winerror", None)
