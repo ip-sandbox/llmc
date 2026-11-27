@@ -130,3 +130,13 @@ py -m venv .venv            # py が無ければ python -m venv .venv
 - クリップボードを使いたくない場合は `--no-clipboard`（プロンプトを `out\manual\` に書き出し、回答を `out\manual\response.txt` に保存してもらう）
 - 結果: `out\manual\report.md`。回答の全文は `out\manual\*-response-*.txt`、書き込んだファイルは `out\manual\workspace\`
 - 解析器の単体試験: `.\.venv\Scripts\python.exe -m unittest manual\test_protocol.py`
+
+### S0: 貼り付けた中身が AI にそのまま届くかの診断
+
+```powershell
+.\.venv\Scripts\python.exe manual\probe_input.py
+```
+
+3 回（A テキスト / B 空行を空白 1 文字に / C テキスト＋HTML）、それぞれ**新しいチャット**に貼り付けて送信し、回答の「コピー」を押す。貼り付けた直後の入力欄の見た目（空行が残っているか、コードの枠になったか）も教えてほしい。結果: `out\manual-probe-input-report.md`
+
+保存した回答の再解析（Copilot には接続しない）: `.\.venv\Scripts\python.exe manual\run.py --replay`

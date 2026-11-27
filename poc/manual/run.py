@@ -51,24 +51,26 @@ def ctx_block(path: str, text: str) -> str:
     return f'{f}\nLLMC-CTX path="{path}" sha={content_sha(text)} lines={lines}\n{text.rstrip(chr(10))}\nLLMC-CTX-END path="{path}"\n{f}'
 
 
-def build_prompt(tid: str, sc: dict, ws: Path, long_rules: bool, extra: str = "") -> tuple[str, dict]:
+def build_prompt(tid: str, sc: dict, ws: Path, long_rules: bool, extra: str = "") -> tuple[str, dict, dict]:
     sha = {}
+    texts = {}
     blocks = []
     for p in sc["allow"]:
         f = ws / p
         if f.exists():
             t = f.read_text(encoding="utf-8")
             sha[path_key(p)] = content_sha(t)
+            texts[path_key(p)] = t
             blocks.append(ctx_block(p, t))
     head = f"llmc プロトコル: llmc/1（規則の版 {REV}）\nこのターンの ID: {tid}\n"
     body = [head, LONG if long_rules else SHORT, "", "# 依頼", extra or sc["task"], "",
             "# 書き込みを許可するパス", *[f"- {p}" for p in sc["allow"]], "",
             "# 現在のファイル（全文）", *blocks, "",
             f"このターンの ID: {tid}（回答の LLMC- の行には、この ID を使ってください）"]
-    return "\n".join(body), sha
+    return "\n".join(body), sha, texts
 
 
-def wait_response(tid: str, use_clip: bool, timeout: float = 1800) -> str | None:
+def wait_response(tid: str, use_clip: bool, timeout: float = 1800) -> tuple[str, str | None] | None:
     if not use_clip:
         resp = WORK / "response.txt"
         if resp.exists():
@@ -78,7 +80,7 @@ def wait_response(tid: str, use_clip: bool, timeout: float = 1800) -> str | None
         while time.time() - t0 < timeout:
             if resp.exists():
                 time.sleep(0.5)
-                return resp.read_text(encoding="utf-8-sig")
+                return resp.read_text(encoding="utf-8-sig"), None
             time.sleep(0.5)
         return None
     import clip
@@ -95,10 +97,25 @@ def wait_response(tid: str, use_clip: bool, timeout: float = 1800) -> str | None
         except OSError:
             continue
         if t and tid.upper() in t.upper() and "LLMC-CTX path=" not in t:
-            return t
+            try:
+                h = clip.get_html()
+            except OSError:
+                h = None
+            return t, h
         if t:
             print("  （ID を含まないコピーを無視しました）", file=sys.stderr)
     return None
+
+
+def parse_response(text, html, tid, sha, ctx_texts, allowed):
+    """HTML（区分）があればそれで解析する。無ければフェンスの無いコピーのテキストとして解析する。"""
+    ok = (lambda p: path_key(p) in allowed)
+    if html:
+        from htmlseg import segments
+        return parse(None, tid, rev=REV, ctx_sha=sha, allowed=ok, segments=segments(html), ctx_text=ctx_texts), "HTML の区分"
+    plain = text.count("```") == 0 or "LLMC-PLAN" in text.split("```")[0]
+    return parse(text, tid, rev=REV, ctx_sha=sha, allowed=ok, plain_copy=plain, ctx_text=ctx_texts), \
+        ("テキスト（フェンスなしのコピー）" if plain else "テキスト")
 
 
 def apply(res, ws: Path) -> list[str]:
@@ -134,13 +151,13 @@ def run_scenario(name: str, sc: dict, ws: Path, rep: Report, use_clip: bool) -> 
     sec = f"{name}: {sc['title']}"
     tid = new_tid()
     allowed = {path_key(p) for p in sc["allow"]}
-    prompt, sha = build_prompt(tid, sc, ws, long_rules=sc["new_chat"])
+    prompt, sha, ctx_texts = build_prompt(tid, sc, ws, long_rules=sc["new_chat"])
     pending = {}
     deletes: dict[str, str] = {}
     plan_all = None
     extra = ""
     for attempt in range(MAX_CONTINUE + 1):
-        (WORK / f"{name}-prompt-{attempt}.txt").write_text(prompt, encoding="utf-8")
+        (WORK / f"{name}-prompt-{attempt}.txt").write_bytes(prompt.encode("utf-8"))
         print("\n" + "=" * 60, file=sys.stderr)
         print(f"[{sec}] 試行 {attempt + 1}（ID {tid}、{len(prompt)} 文字）", file=sys.stderr)
         if sc["new_chat"] and attempt == 0:
@@ -155,14 +172,19 @@ def run_scenario(name: str, sc: dict, ws: Path, rep: Report, use_clip: bool) -> 
         else:
             print(f"  プロンプト: {WORK / f'{name}-prompt-{attempt}.txt'}", file=sys.stderr)
         t0 = time.time()
-        text = wait_response(tid, use_clip)
+        got = wait_response(tid, use_clip)
         elapsed = round(time.time() - t0, 1)
-        if text is None:
+        if got is None:
             rep.add(sec, f"試行 {attempt + 1}", "NG", "回答を受け取れなかった（時間切れ）")
             return
-        (WORK / f"{name}-response-{attempt}.txt").write_text(text, encoding="utf-8")
-        res = parse(text, tid, rev=REV, ctx_sha=sha, allowed=lambda p: path_key(p) in allowed)
-        rep.add(sec, f"試行 {attempt + 1}: 受け取ったテキストの形", "INFO", {**shape(text), "所要秒": elapsed})
+        text, html = got
+        # テキストモードで書くと CRLF が \r\r\n になるので、バイト列で保存する
+        (WORK / f"{name}-response-{attempt}.txt").write_bytes(text.encode("utf-8"))
+        if html:
+            (WORK / f"{name}-response-{attempt}.html").write_bytes(html.encode("utf-8"))
+        res, how = parse_response(text, html, tid, sha, ctx_texts, allowed)
+        rep.add(sec, f"試行 {attempt + 1}: 受け取ったテキストの形", "INFO",
+                {**shape(text), "HTML あり": bool(html), "解析に使った形": how, "所要秒": elapsed})
         rep.add(sec, f"試行 {attempt + 1}: 解析", "OK" if res.kind == "complete" else
                 ("WARN" if res.kind == "truncated" else "NG"), res.summary())
         if plan_all is None and res.plan:
@@ -180,7 +202,7 @@ def run_scenario(name: str, sc: dict, ws: Path, rep: Report, use_clip: bool) -> 
         tid = new_tid()
         extra = ("前の回答は途中で切れました。次の項目だけを、同じ書式で（計画から）出し直してください: "
                  + ", ".join(remaining))
-        prompt, _ = build_prompt(tid, {**sc, "task": extra}, ws, long_rules=False)
+        prompt, _, _ = build_prompt(tid, {**sc, "task": extra}, ws, long_rules=False)
     else:
         rep.add(sec, "結果", "NG", "続きの依頼の上限に達したため書き込まない")
         return
@@ -192,11 +214,53 @@ def run_scenario(name: str, sc: dict, ws: Path, rep: Report, use_clip: bool) -> 
     rep.add(sec, "内容の確認", "OK" if all(checks.values()) else "WARN", checks)
 
 
+def replay() -> int:
+    """保存したプロンプトと回答から、解析と書き込みをやり直す（Copilot には接続しない）。"""
+    import re
+    rep = Report("manual-replay", "人が送信する方式の PoC（保存した回答の再解析）")
+    ws = WORK / "replay-workspace"
+    for n in ["S1", "S1b", "S2", "S3"]:
+        sc = SCENARIOS[n]
+        pf, rf = WORK / f"{n}-prompt-0.txt", WORK / f"{n}-response-0.txt"
+        if not (pf.exists() and rf.exists()):
+            continue
+        prompt = pf.read_bytes().decode("utf-8")
+        tid = re.search(r"このターンの ID: (\w+)", prompt).group(1)
+        # AI が見たのと同じ状態にする: プロンプトの LLMC-CTX から作業用のフォルダと sha を作り直す
+        if ws.exists():
+            shutil.rmtree(ws)
+        sha, ctx_texts = {}, {}
+        for m in re.finditer(r'LLMC-CTX path="([^"]+)" sha=(\w+)[^\n]*\n(.*?)\nLLMC-CTX-END path="\1"', prompt, re.S):
+            path, h, body = m.group(1), m.group(2), m.group(3) + "\n"
+            (ws / path).parent.mkdir(parents=True, exist_ok=True)
+            (ws / path).write_bytes(body.encode("utf-8"))
+            sha[path_key(path)] = h
+            ctx_texts[path_key(path)] = body
+            if content_sha(body) != h:
+                rep.add(n, f"sha の再計算 {path}", "WARN", f"プロンプト {h} / 再計算 {content_sha(body)}")
+        raw = rf.read_bytes().decode("utf-8-sig").replace("\r\r\n", "\n")  # 以前の保存の誤りを戻す
+        hf = rf.with_suffix(".html")
+        html = hf.read_bytes().decode("utf-8") if hf.exists() else None
+        allowed = {path_key(p) for p in sc["allow"]}
+        res, how = parse_response(raw, html, tid, sha, ctx_texts, allowed)
+        sec = f"{n}: {sc['title']}"
+        rep.add(sec, "解析", "OK" if res.kind == "complete" else "NG", {"形": how, **res.summary()})
+        if res.kind == "complete":
+            rep.add(sec, "書き込み", "OK", apply(res, ws))
+            checks = sc["check"](ws, res)
+            rep.add(sec, "内容の確認", "OK" if all(checks.values()) else "WARN", checks)
+    print(rep.write(), file=sys.stderr)
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", choices=sorted(SCENARIOS))
     ap.add_argument("--no-clipboard", action="store_true")
+    ap.add_argument("--replay", action="store_true", help="保存した回答（out\\manual\\*-response-*.txt）をもう一度解析して書き込む")
     a = ap.parse_args()
+    if a.replay:
+        return replay()
     WORK.mkdir(parents=True, exist_ok=True)
     ws = WORK / "workspace"
     names = [a.only] if a.only else ["S1", "S1b", "S2", "S3"]

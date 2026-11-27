@@ -87,6 +87,60 @@ class TestParse(unittest.TestCase):
         self.assertEqual(parse(DONE, T).kind, "empty")
 
 
+class TestCopilotCopy(unittest.TestCase):
+    """PoC の実測（個人の Copilot の「応答のコピー」）に基づく形。"""
+
+    def plain(self):
+        return "\n".join([f'LLMC-PLAN id={T} write="a.md"', "",
+                          f'LLMC-FILE id={T} path="a.md" base=new', "# t", "<br>", "", "x", f'LLMC-END id={T} path="a.md"',
+                          "", "説明", "", f"LLMC-DONE v=1 id={T}"])
+
+    def test_plain_copy_rejected_by_default(self):
+        self.assertEqual(parse(self.plain(), T).kind, "invalid")
+
+    def test_plain_copy_accepted_with_flag(self):
+        r = parse(self.plain(), T, plain_copy=True)
+        self.assertEqual(r.kind, "complete", r.summary())
+        self.assertEqual(r.files[0].text, "# t\n\n\nx")
+        self.assertTrue(any(w.startswith("W_BR_RESTORED") for w in r.warnings))
+
+    def test_br_kept_when_original_has_it(self):
+        r = parse(self.plain(), T, plain_copy=True, ctx_text={"A.MD": "# t\n<br>\nx"})
+        self.assertIn("<br>", r.files[0].lines)
+
+    def test_segments(self):
+        segs = [("code", f'LLMC-PLAN id={T} write="a.md"'),
+                ("code", f'LLMC-FILE id={T} path="a.md" base=new\n```py\nx\n```\nLLMC-END id={T} path="a.md"'),
+                ("text", "説明 __init__"), ("code", f"LLMC-DONE v=1 id={T}")]
+        r = parse(None, T, segments=segs)
+        self.assertEqual(r.kind, "complete", r.summary())
+        self.assertEqual(r.files[0].text, "```py\nx\n```")
+
+    def test_segments_split_block(self):
+        segs = [("code", f'LLMC-PLAN id={T} write="a.md"'),
+                ("code", f'LLMC-FILE id={T} path="a.md" base=new\nx'), ("text", "描画された部分"),
+                ("code", f'y\nLLMC-END id={T} path="a.md"'), ("code", f"LLMC-DONE v=1 id={T}")]
+        r = parse(None, T, segments=segs)
+        self.assertNotEqual(r.kind, "complete")
+        self.assertTrue(any(e.startswith("E_SPLIT_BLOCK") for e in r.errors), r.summary())
+
+    def test_segments_plan_in_text_rejected(self):
+        segs = [("text", f'LLMC-PLAN id={T} write="a.md"'),
+                ("code", f'LLMC-FILE id={T} path="a.md" base=new\nx\nLLMC-END id={T} path="a.md"'),
+                ("code", f"LLMC-DONE v=1 id={T}")]
+        self.assertEqual(parse(None, T, segments=segs).kind, "invalid")
+
+    def test_html_segments(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from htmlseg import segments
+        html = ("Version:0.9\r\nStartHTML:0\r\n<html><body><!--StartFragment-->"
+                f"<div><pre><code>LLMC-PLAN id={T} write=&quot;a&quot;</code></pre><p>説明 <strong>init</strong></p>"
+                f"<pre><code>a\n\n  b &lt;br&gt;\n</code></pre></div><!--EndFragment--></body></html>")
+        segs = segments(html)
+        self.assertEqual([k for k, _ in segs], ["code", "text", "code"])
+        self.assertEqual(segs[2][1], "a\n\n  b <br>")
+
+
 class TestPath(unittest.TestCase):
     def test_bad(self):
         for p in ("src/../tests/x", "C:x", "/x", "a.py:ads", "tests./x", "con.txt", "CONOUT$", "TESTS~1/x", ""):

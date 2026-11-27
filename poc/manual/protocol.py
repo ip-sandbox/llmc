@@ -14,6 +14,8 @@ DIRECTIVE = re.compile(r"^LLMC-(PLAN|FILE|END|DELETE|READ|DONE)\b(.*)$")
 ATTR = re.compile(r"""([A-Za-z_][\w-]*)=(?:"([^"]*)"|'([^']*)'|(\S+))""")
 FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})(.*)$")
 RESERVED = re.compile(r"^(CON|PRN|AUX|NUL|CLOCK\$|CONIN\$|CONOUT\$|COM[0-9¹²³]|LPT[0-9¹²³])(\..*)?$", re.I)
+SEG_OPEN = "\x00LLMC-SEG-OPEN\x00"
+SEG_CLOSE = "\x00LLMC-SEG-CLOSE\x00"
 ELISION = re.compile(r"^\s*(\.\.\.|…)\s*$|(省略|以下同じ|以下同様|変更なし|変更しない部分|rest of (the )?file|unchanged|existing code)", re.I)
 
 
@@ -104,10 +106,26 @@ class Result:
                 "fence_lines": self.fence_lines}
 
 
-def parse(text: str, tid: str, rev: str | None = None, ctx_sha: dict[str, str] | None = None,
-          allowed=lambda p: True) -> Result:
+def segments_to_text(segs) -> str:
+    """区分の列を、区分の境界を表す行（番兵）を入れたテキストにする。"""
+    out = []
+    for kind, t in segs:
+        if kind == "code":
+            out += [SEG_OPEN, t, SEG_CLOSE]
+        else:
+            out.append(t)
+    return "\n".join(out)
+
+
+def parse(text: str | None, tid: str, rev: str | None = None, ctx_sha: dict[str, str] | None = None,
+          allowed=lambda p: True, segments=None, plain_copy: bool = False,
+          ctx_text: dict[str, str] | None = None) -> Result:
+    """text: 生テキスト。segments: 区分の列（HTML から）。plain_copy: フェンスが取り除かれたコピーのテキスト。
+    ctx_text: 送ったファイルの中身（<br> の復元の判定に使う）。"""
     r = Result()
     tid_u = tid.upper()
+    if segments is not None:
+        text = segments_to_text(segments)
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     cur: Block | None = None
     fence: tuple[str, int] | None = None  # ファイルの外側でのフェンスの開閉
@@ -121,6 +139,11 @@ def parse(text: str, tid: str, rev: str | None = None, ctx_sha: dict[str, str] |
         if FENCE.match(raw):
             r.fence_lines += 1
         if cur is not None:
+            if raw == SEG_CLOSE:
+                r.errors.append(f"E_SPLIT_BLOCK: {cur.path}")
+                cur = None
+                fence = None
+                continue
             s = raw.strip().strip(ZW).strip()
             m = DIRECTIVE.match(s)
             if m:
@@ -143,7 +166,13 @@ def parse(text: str, tid: str, rev: str | None = None, ctx_sha: dict[str, str] |
                 cur.lines.append(raw)
                 continue
         # ---- ファイルの外側
-        fm = FENCE.match(raw)
+        if raw == SEG_OPEN:
+            fence = ("seg", 0)
+            continue
+        if raw == SEG_CLOSE:
+            fence = None
+            continue
+        fm = None if segments is not None else FENCE.match(raw)
         if fm:
             mark, info = fm.group(1), fm.group(2).strip()
             if "LLMC-FILE" in info:
@@ -171,7 +200,7 @@ def parse(text: str, tid: str, rev: str | None = None, ctx_sha: dict[str, str] |
             p = attrs.get("path", "")
             cur = Block(path=norm_path(p), base=attrs.get("base"))
             r.files.append(cur)
-            if fence is None:
+            if fence is None and not plain_copy:
                 r.warnings.append(f"W_FILE_OUTSIDE_FENCE: {p}")
             continue
         if kind == "DONE":
@@ -184,8 +213,11 @@ def parse(text: str, tid: str, rev: str | None = None, ctx_sha: dict[str, str] |
             r.warnings.append(f"W_STRAY_END: {attrs.get('path')}")
             continue
         if fence is None:
-            r.errors.append(f"E_RENDERED_DIRECTIVE: {kind}")
-            continue
+            if plain_copy:
+                r.warnings.append(f"W_PLAIN_COPY: {kind}")  # コピーでフェンスが取り除かれた。区分の確認ができない
+            else:
+                r.errors.append(f"E_RENDERED_DIRECTIVE: {kind}")
+                continue
         if kind == "PLAN":
             for op in ("write", "delete", "read"):
                 if op in attrs:
@@ -197,6 +229,16 @@ def parse(text: str, tid: str, rev: str | None = None, ctx_sha: dict[str, str] |
 
     if cur is not None:
         r.errors.append(f"E_UNTERMINATED: {cur.path}")
+
+    # ---- <br> だけの行を空行に戻す（Copilot に貼り付けた空行が <br> という文字になって届き、AI が書き写すため）
+    for b in r.files:
+        orig = (ctx_text or {}).get(path_key(b.path), "")
+        if "<br>" in orig.split("\n"):
+            continue
+        n = sum(1 for l in b.lines if l.strip() == "<br>")
+        if n:
+            b.lines = ["" if l.strip() == "<br>" else l for l in b.lines]
+            r.warnings.append(f"W_BR_RESTORED: {b.path} {n} 行")
 
     # ---- 検査
     if r.done is not None:

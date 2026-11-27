@@ -37,6 +37,32 @@ def _open(retries: int = 20) -> None:
     raise OSError("クリップボードを開けない")
 
 
+u32.RegisterClipboardFormatW.argtypes = [w.LPCWSTR]
+u32.RegisterClipboardFormatW.restype = w.UINT
+k32.GlobalSize.argtypes = [w.HGLOBAL]
+k32.GlobalSize.restype = ctypes.c_size_t
+CF_HTML = u32.RegisterClipboardFormatW("HTML Format")
+
+
+def get_html() -> str | None:
+    """CF_HTML（UTF-8 のバイト列）を文字列で返す。無ければ None。"""
+    if not u32.IsClipboardFormatAvailable(CF_HTML):
+        return None
+    _open()
+    try:
+        h = u32.GetClipboardData(CF_HTML)
+        if not h:
+            return None
+        p = k32.GlobalLock(h)
+        try:
+            data = ctypes.string_at(p, k32.GlobalSize(h))
+        finally:
+            k32.GlobalUnlock(h)
+    finally:
+        u32.CloseClipboard()
+    return data.split(b"\x00", 1)[0].decode("utf-8", "replace")
+
+
 def sequence() -> int:
     return u32.GetClipboardSequenceNumber()
 
@@ -73,5 +99,39 @@ def set_text(text: str) -> None:
         if not u32.SetClipboardData(CF_UNICODETEXT, h):
             k32.GlobalFree(h)
             raise ctypes.WinError(ctypes.get_last_error())
+    finally:
+        u32.CloseClipboard()
+
+
+
+def _cf_html(fragment: str) -> bytes:
+    """HTML の断片から CF_HTML のバイト列（ヘッダの位置は UTF-8 のバイト数）を作る。"""
+    head = "Version:0.9\r\nStartHTML:{0:010d}\r\nEndHTML:{1:010d}\r\nStartFragment:{2:010d}\r\nEndFragment:{3:010d}\r\n"
+    pre = "<html><body><!--StartFragment-->"
+    post = "<!--EndFragment--></body></html>"
+    dummy = head.format(0, 0, 0, 0).encode("utf-8")
+    sh = len(dummy)
+    sf = sh + len(pre.encode("utf-8"))
+    ef = sf + len(fragment.encode("utf-8"))
+    eh = ef + len(post.encode("utf-8"))
+    return head.format(sh, eh, sf, ef).encode("utf-8") + (pre + fragment + post).encode("utf-8")
+
+
+def set_text_and_html(text: str, fragment: str) -> None:
+    """テキストと HTML の両方をクリップボードに入れる（貼り付け先が HTML を優先するかを試すため）。"""
+    tdata = ctypes.create_unicode_buffer(text)
+    hdata = _cf_html(fragment) + b"\x00"
+    handles = []
+    for buf, size in ((tdata, ctypes.sizeof(tdata)), (hdata, len(hdata))):
+        h = k32.GlobalAlloc(GMEM_MOVEABLE, size)
+        p = k32.GlobalLock(h)
+        ctypes.memmove(p, buf, size)
+        k32.GlobalUnlock(h)
+        handles.append(h)
+    _open()
+    try:
+        u32.EmptyClipboard()
+        u32.SetClipboardData(CF_UNICODETEXT, handles[0])
+        u32.SetClipboardData(CF_HTML, handles[1])
     finally:
         u32.CloseClipboard()
