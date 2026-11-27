@@ -19,6 +19,11 @@
 | 9 | ふだん使いの Copilot との並行利用 | 想定しない | プロファイルは llmc 専用とし、ユーザーのブラウザとは共有しない |
 | 10 | 参考資料の登録 | 参考実装・キックオフ資料は登録しない。本計画書を初版とする | — |
 | 11 | 実画面の調査 | ユーザーが協力する | open-questions.md に調査手順（probe の出力、DOM スナップショットの取り方）を書き、結果を受けて spec-browser-driver を更新する |
+| 12 | 進め方 | 設計を固め切る前に、PoC と動作確認のプログラムで実物を確かめ、結果を設計に反映する（5 章） | 既存の設計書は「暫定版」とする |
+| 13 | PoC で使うチャット | **最初は個人のアカウントの Copilot** を使う。組織の Microsoft 365 Copilot Chat での確認は、その後に別の段階として行う | 個人と組織で、ログイン（SSO・条件付きアクセス）、画面の DOM、使える機能（エージェントビルダー、職場と Web の切り替えなど）が違い得る。個人で確かめた結果は「組織でも同じか」を改めて確かめる |
+| 14 | PoC のコード | キックオフ資料の「コードはまだ書かない」の例外とする。本体とは別の `poc/` に置く使い捨てのプログラム | — |
+| 15 | PoC の結果の受け渡し | 利用者が実行し、レポートを**チャットに貼る**（リポジトリにはコミットしない） | レポートは既定で会話の本文・画面写真・社内の URL・利用者名・PC 名を含めない |
+| 16 | 社内規程（画面の自動操作） | 確認済み | — |
 | — | 成果物の言語 | 日本語 | — |
 
 ## 2. 参考実装レビューの要旨
@@ -49,18 +54,62 @@
 |---|---|---|
 | フェーズ 3 の後 | 別のエージェントによるレビュー（重大度 高 9 件・中 16 件・低 約 10 件） | 提案の一部だけが書かれる経路 → 計画（`LLMC-PLAN`）と打ち切りの規則 / 全文置換の省略と記憶違い → `base` ハッシュと省略の検出 / 完了の誤判定 → 操作欄に限定、停止ボタンの消滅を必須に / エラーのパターンの誤検出 → 当てる要素を限定 / マスクの持ち出し → 復元を元のファイルに限定 / 実行される AI のコード → 保護の境界を明記、実行前後の走査（FR-UC3-16） / SSO とヘッドレス → 最優先の調査項目 / `rev` の論理の誤り → エージェント方式ではプロンプトに書かない / OneDrive → リパースタグを区別。そのほか、文書間の不整合、読み取りの保護、Windows の置き換えの方法、名前付きパイプの権限などを反映 |
 
-## 5. 作業フェーズ
+## 5. 作業の進め方（PoC を挟む）
 
-| フェーズ | 成果物 | 区切り |
-|---|---|---|
-| 0 | `plan.md`（本書） | — |
-| 1 | `review-reference-impl.md` | **ユーザー確認** |
-| 2 | `requirements.md`、`architecture.md` | — |
-| 3 | `spec-file-protocol.md`、`spec-browser-driver.md`、`spec-agent.md` | **ユーザー確認** |
-| 4 | `spec-loop.md`、`spec-convert.md` | — |
-| 5 | `spec-auth.md`、`spec-daemon.md`、`spec-shell-integration.md`、`spec-tui.md`、`spec-security.md` | — |
-| 6 | `tech-selection.md`、`test-plan.md`、`milestones.md`、`open-questions.md` | 最終確認 |
+### 5.1 方針
 
-- フェーズごとにコミットし、作業ブランチに push する。PR は指示があるまで作らない
-- コードは書かない。設計の途中で判断に必要な情報が足りなければ、推測で埋めずに質問する
-- 実画面で確かめるまで決められない事項は、仮の値を置いたうえで `open-questions.md` の調査項目に必ず載せる
+- 書いた設計書（requirements、architecture、spec-file-protocol、spec-browser-driver、spec-agent）は**暫定版**とする。実物で確かめる仮説を 5.2 にまとめ、PoC の結果で確定・修正する
+- PoC は `poc/` に置く使い捨てのプログラム。本体の設計や品質の基準は適用しない
+- 分担: PoC を書き、模擬ページなどで動くところまで確かめるのは Claude。実機（Windows の PC と Copilot）での実行は利用者。結果のレポートをチャットに貼ってもらい、Claude が設計書に反映する
+- 後続の仕様書は、関係する PoC の結果が出てから書く
+
+### 5.2 確かめる仮説
+
+| ID | 仮説 | PoC | 反映する文書 |
+|---|---|---|---|
+| H-01 | 選んだブラウザで、画面ありでログインしたプロファイルが、ヘッドレスでも使える（個人のアカウント → 組織） | PoC-1 / 1b | spec-auth、spec-browser-driver 10.4 |
+| H-02 | 入力方式のどれかで、長文を崩さずに入力できる（読み戻しが一致し、添付への自動変換が起きない）。入力欄の上限を送信せずに測れる | PoC-2 | spec-browser-driver 4 |
+| H-03 | 利用者のメッセージと回答を DOM で見分けられ、ターン ID で自分の送信の直後の回答を特定できる | PoC-2 | spec-browser-driver 5 |
+| H-04 | 停止ボタンと、回答全体の操作欄が存在し、完了の判定に使える | PoC-2 | spec-browser-driver 6 |
+| H-05 | コピーボタンで生の Markdown が取れ、OS のクリップボードを使わずに横取りできる | PoC-2 | spec-browser-driver 7.1 |
+| H-06 | DOM の `pre` から、コードの中身を改変せずに取れる（`textContent` か `innerText`） | PoC-2 | spec-browser-driver 7.2 |
+| H-07 | 会話ごとに URL があり、続行に使える | PoC-2 | spec-browser-driver 8 |
+| H-08 | AI が書式 llmc/1（計画、`base`、ID、終了行、フェンスの長さ）を十分な率で守る。続きの依頼が機能する | PoC-3 | spec-file-protocol、spec-agent |
+| H-09 | 全文の出力で省略が起きる頻度と、検出の規則の妥当性 | PoC-3 | spec-file-protocol 6.6 |
+| H-10 | PowerShell 5.1 と cmd.exe のパイプ・リダイレクトでの日本語の扱いが想定どおり | PoC-0 | spec-shell-integration |
+| H-11 | Playwright とブラウザを、管理者権限なしで venv に入れられる（社内のプロキシの下で） | PoC-0 | tech-selection |
+| H-12 | 名前付きパイプの DACL の指定、`FILE_FLAG_FIRST_PIPE_INSTANCE`、接続先の所有者の確認が ctypes で実現できる。標準ライブラリのパイプの既定の DACL | PoC-4 | spec-daemon |
+| H-13 | `pythonw` の下で Playwright が動く。ジョブからの切り離しができる | PoC-4 | spec-daemon |
+| H-14 | Job Object でプロセスツリーごと終了できる | PoC-4 | spec-loop（実行器） |
+| H-15 | `ReplaceFileW` で ACL・属性・代替データストリームが保たれる。他のプロセスが開いているときの失敗の仕方 | PoC-4 | spec-file-protocol 10.2 |
+| H-16 | リパースタグで、ジャンクション・シンボリックリンクと OneDrive のファイルを見分けられる | PoC-4 | spec-file-protocol 8.4 |
+| H-17 | 末尾のドットの切り詰めと 8.3 形式の短い名前が、実際の PC で起きる | PoC-4 | spec-file-protocol 8.2 |
+| H-18 | 添付・ダウンロード・コードインタープリター・エージェントビルダーが使える | PoC-5 | spec-convert、spec-agent |
+| H-19 | 組織の Copilot の「職場 / Web」の切り替えを画面で確かめられる | PoC-1b / 2b | spec-browser-driver |
+
+### 5.3 PoC の順序
+
+| 段階 | 内容 | Copilot への送信 | 終わった後の作業 |
+|---|---|---|---|
+| PoC-0 | 環境の診断（Python、venv、Playwright、ブラウザの起動、コンソールとパイプの文字コード） | なし | tech-selection と spec-shell-integration の下書き |
+| PoC-4 | Windows の仕組みの試験（名前付きパイプ、pythonw、ジョブ、ReplaceFileW、リパースタグ、パスの挙動） | なし | spec-daemon の下書き、spec-file-protocol の修正 |
+| PoC-1 | 個人のアカウントでのログインと、ブラウザ・ヘッドレスの組み合わせ | なし | spec-auth の下書き |
+| PoC-2 | 個人の Copilot の画面の調査と 1 往復の記録（模擬ページでの事前確認つき） | 数回 | spec-browser-driver の確定、サイト別プロファイルの初版 |
+| PoC-3 | 書式の守られ方の計測（解析器の試作を使う） | 20〜40 回 | spec-file-protocol・spec-agent の確定（守れない部分は書式を簡単にする） |
+| — | spec-loop、spec-convert を書く | — | — |
+| PoC-1b / 2b | 組織の Copilot で、PoC-1・PoC-2 の差分を確かめる | 数回 | 組織用のプロファイル、spec-auth の修正 |
+| PoC-5 | 添付・ダウンロード・コードインタープリター・エージェントビルダー（組織） | 数回 | spec-convert・spec-agent の修正 |
+| — | 残りの仕様書（spec-security、spec-tui、test-plan、milestones、open-questions など） | — | — |
+
+PoC-0 と PoC-4 は Copilot を使わないので、最初にまとめて実行してもらう。
+
+### 5.4 注意
+
+- 個人のアカウントの Copilot には、**社内の情報を送らない**。PoC の依頼文は、すべて架空の内容にする
+- レポートは、貼る前に利用者が内容を確認できる Markdown で出す。環境変数から得た利用者名・PC 名・ホームのパスなどは、出力の前に置き換える
+
+### 5.5 運用
+
+- 段階ごとにコミットし、作業ブランチに push する。PR は指示があるまで作らない
+- 設計の途中で判断に必要な情報が足りなければ、推測で埋めずに質問する
+- 実画面で確かめるまで決められない事項は、仮の値を置いたうえで 5.2 の仮説か `open-questions.md` に必ず載せる
