@@ -189,4 +189,4 @@ AI が書いたコードが無限ループや入力待ちになると、ルー�
 3. llmc の作業ディレクトリ・設定・ブラウザプロファイルは**作業リポジトリの外**に置く（spec-auth、architecture）
 4. 評価をすり抜ける書き込み（A3）を、ループ定義の検証と許可リストで防ぐ方法を spec-security に書く
 5. 終了コードに「内部エラー」「ログイン切れ」「セレクタ不一致」「確認が必要（非対話モード）」を分けて加える（spec-shell-integration）
-6. PowerShell 5.1 で日本語をパイプするときの `$OutputEncoding` の問題と、Python の標準入出力の文字コード（A5）をまとめて扱う（spec-shell-integration）
+6. PowerShell 5.1 で日本語をパイプするときの `$OutputEncoding` の問題と、Python の標準入出力の文字コード（A5）をまとめて扱う（spec-shell-integration）。PEP 686 により Python 3.15 以降は UTF-8 モードが既定になり、リダイレクト時の文字コードの挙動が変わるので、tech-selection で Python のバージョンを固定し、llmc 側で入出力の文字コードを明示的に設定する（バージョンに依存しないようにする）
