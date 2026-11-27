@@ -38,6 +38,36 @@ py -m venv .venv            # py が無ければ python -m venv .venv
 - 結果: `out\poc4-report.md`
 - 通常の権限（管理者ではない）で実行してください
 
+## PoC-1: ログインの保持（個人の Copilot、copilot.microsoft.com）
+
+メッセージは送りません。画面を開いて状態を見るだけです。
+
+1. ログイン（画面ありのブラウザが開きます。Microsoft アカウントでログインし、チャットの入力欄が出たらコンソールで Enter）
+
+   ```powershell
+   .\.venv\Scripts\python.exe poc1_login\login.py --browser chromium
+   .\.venv\Scripts\python.exe poc1_login\login.py --browser msedge      # Edge があれば
+   ```
+
+2. 確認（ログイン済みのプロファイルを、次の組み合わせで順に開きます）
+
+   ```powershell
+   .\.venv\Scripts\python.exe poc1_login\check.py
+   ```
+
+   | 組み合わせ | 内容 |
+   |---|---|
+   | chromium-headed | 同梱 Chromium・画面あり |
+   | chromium-headless-shell | 同梱 Chromium・ヘッドレス（既定。別のバイナリ） |
+   | chromium-new-headless | 同梱 Chromium・新しいヘッドレスモード |
+   | chromium-headless-shell-uafix | 上の既定のヘッドレスで、UA の HeadlessChrome を Chrome に置き換えたもの |
+   | msedge-headed / msedge-headless | Edge・画面あり / ヘッドレス |
+
+- 結果: `out\poc1-login-*-report.md` と `out\poc1-check-report.md`
+- `check.py` は、**翌日・数日後にも**実行して貼ってもらえると、ログインが保たれる期間の目安になります
+- プロファイル（ログイン情報を含む）は `%LOCALAPPDATA%\llmc-poc\profiles\` にあります。PoC が終わったらフォルダごと削除してください
+- 記録するのは、URL のホスト名、入力欄やサインインのボタンの有無、cookie の**数**（値は記録しません）、UA の種類だけです
+
 ## レポートを貼る前に
 
 - 利用者名、PC 名、ホームのパス、ユーザーの SID は `<USERNAME>` などに置き換えてあります
