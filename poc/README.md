@@ -109,3 +109,24 @@ py -m venv .venv            # py が無ければ python -m venv .venv
 - 貼ってほしいもの: `out\poc0-report.md`、`out\poc4-report.md`、`out\poc1-login-msedge-report.md`、`out\poc1-check-report.md`、`out\poc2-send-org*-report.md`
 - 組織版の画面は個人版と DOM が違う可能性がある。`send_once.py` が「画面を開く・ログイン」や「送信ボタン」で NG になった場合は、画面の作りが違うだけの可能性があるので、そのまま貼ってもらえれば調整する
 - プロファイル（組織のログイン情報を含む）は `%LOCALAPPDATA%\llmc-poc\profiles\` にある。確認が終わったらフォルダごと削除する
+
+## 人が送信する方式の PoC（manual）
+
+自動操作からの送信が拒否されたため、送信と回答の受け取りを利用者が行う方式を試す。llmc はプロンプトの組み立て、回答の解析、ファイルの書き込みを担当する。
+
+```powershell
+.\.venv\Scripts\python.exe manual\run.py
+```
+
+1 つの課題（ラウンド）ごとに、次を繰り返す。
+
+1. コンソールの指示に従い、Copilot で**新しいチャット**か**同じチャット**を開く
+2. プロンプトがクリップボードに入っているので、Copilot の入力欄に貼り付けて（Ctrl+V）送信する
+3. 回答が終わったら、回答の下の「**コピー**」ボタンを押す（llmc がクリップボードを見張っていて、自動で拾う）
+
+- 課題は 4 つ（すべて架空）: S1 YAML の書き換え → S1b 同じチャットの 2 回目 → S2 入れ子のフェンスを含む Markdown → S3 複数ファイルと削除
+- 回答が途中で切れたと判定した場合は、続きの依頼が自動でクリップボードに入るので、同じチャットに貼り付けて送る
+- 今回のターン ID を含まないコピーは無視する（途中で他のものをコピーしても大丈夫）
+- クリップボードを使いたくない場合は `--no-clipboard`（プロンプトを `out\manual\` に書き出し、回答を `out\manual\response.txt` に保存してもらう）
+- 結果: `out\manual\report.md`。回答の全文は `out\manual\*-response-*.txt`、書き込んだファイルは `out\manual\workspace\`
+- 解析器の単体試験: `.\.venv\Scripts\python.exe -m unittest manual\test_protocol.py`
