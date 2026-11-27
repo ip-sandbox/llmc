@@ -63,8 +63,14 @@ def open_copilot(pw, variant: str = "msedge-headless", relogin_wait: float = 150
             break
         page.wait_for_timeout(500)
     if page.locator(INPUT).count() == 0:
-        page.get_by_role("button", name=SIGNIN).first.click(timeout=15000)
-        info["relogin"] = True
+        # 組織版は「Sign in」を押さなくても SSO で自動的に進むことがあるので、ボタンが無ければ待つだけにする
+        btn = page.get_by_role("button", name=SIGNIN)
+        try:
+            if btn.count() > 0:
+                btn.first.click(timeout=15000)
+                info["relogin"] = True
+        except Exception:  # noqa: BLE001  遷移でボタンが消えた
+            pass
         while time.time() - t0 < relogin_wait:
             # 同期 API では time.sleep の間はイベントが処理されず page.url が古いままになる。
             # ページに問い合わせ、待つときは wait_for_timeout を使う

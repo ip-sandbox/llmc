@@ -73,3 +73,39 @@ py -m venv .venv            # py が無ければ python -m venv .venv
 - 利用者名、PC 名、ホームのパス、ユーザーの SID は `<USERNAME>` などに置き換えてあります
 - それでも、社内の情報（社内のホスト名、フォルダ名など）が残っていないかを確かめてから貼ってください
 - `out\` はコミットの対象外です（`.gitignore`）
+
+## PoC-1b / PoC-2b: 組織の Microsoft 365 Copilot Chat での確認（社内 PC）
+
+個人の Copilot では、自動操作したブラウザからの送信がボット対策で拒否された（`docs/poc-findings.md`）。組織版で同じことが起きるかを確かめる。
+
+1. 準備（「準備（初回のみ）」と同じ。社内のプロキシで失敗したら、エラーの最後の 20 行を貼る）
+2. 環境の診断（Copilot には接続しない）
+
+   ```powershell
+   .\.venv\Scripts\python.exe poc0_env\check_env.py
+   .\.venv\Scripts\python.exe poc4_win\check_win.py
+   ```
+
+3. ログイン（画面ありの Edge が開く。組織のアカウントでログインし、チャットの入力欄が出たらコンソールで Enter）
+
+   ```powershell
+   $env:POC_URL = "https://m365.cloud.microsoft/chat"   # 普段使っている Copilot の URL が違えば、それに変える
+   .\.venv\Scripts\python.exe poc1_login\login.py --browser msedge
+   .\.venv\Scripts\python.exe poc1_login\check.py --only msedge-headless
+   ```
+
+4. 送信の確認（**架空の短い依頼を 1 回だけ送る**。会話の履歴に 1 件残る）
+
+   ```powershell
+   .\.venv\Scripts\python.exe poc2_page\send_once.py --url $env:POC_URL --tag org
+   ```
+
+   ヘッドレスで NG だった場合だけ、画面ありでも 1 回試す（画面に Edge が開く）:
+
+   ```powershell
+   .\.venv\Scripts\python.exe poc2_page\send_once.py --url $env:POC_URL --tag org-headed --variant msedge-headed
+   ```
+
+- 貼ってほしいもの: `out\poc0-report.md`、`out\poc4-report.md`、`out\poc1-login-msedge-report.md`、`out\poc1-check-report.md`、`out\poc2-send-org*-report.md`
+- 組織版の画面は個人版と DOM が違う可能性がある。`send_once.py` が「画面を開く・ログイン」や「送信ボタン」で NG になった場合は、画面の作りが違うだけの可能性があるので、そのまま貼ってもらえれば調整する
+- プロファイル（組織のログイン情報を含む）は `%LOCALAPPDATA%\llmc-poc\profiles\` にある。確認が終わったらフォルダごと削除する
