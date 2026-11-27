@@ -22,6 +22,35 @@ from common_browser import URL, VARIANTS, launch, profile_dir  # noqa: E402
 from probe_state import page_state, verdict  # noqa: E402
 
 
+def click_sign_in(page) -> dict:
+    """「Sign in」を押し、残っている cookie で黙ってログインできるかを見る（資格情報は入力しない）。"""
+    import time
+    from urllib.parse import urlparse
+    from probe_state import SIGNIN
+    res = {"Sign in を押した": False, "経由したホスト": []}
+    try:
+        btn = page.get_by_role("button", name=SIGNIN).first
+        btn.click(timeout=10000)
+        res["Sign in を押した"] = True
+    except Exception as e:  # noqa: BLE001
+        res["Sign in を押せなかった"] = first_line(e)
+        return res
+    hosts = res["経由したホスト"]
+    t0 = time.time()
+    while time.time() - t0 < 40:
+        h = urlparse(page.url).hostname or ""
+        if not hosts or hosts[-1] != h:
+            hosts.append(h)
+        try:
+            if h.endswith("copilot.com") and page.get_by_role("textbox").count() > 0:
+                break
+        except Exception:  # noqa: BLE001
+            pass
+        time.sleep(0.5)
+    res["ログインまでの秒数"] = round(time.time() - t0, 1)
+    return res
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", choices=sorted(VARIANTS))
@@ -59,7 +88,12 @@ def main() -> int:
                 try:
                     page = ctx.pages[0] if ctx.pages else ctx.new_page()
                     page.goto(URL, timeout=60000)
-                    st = page_state(ctx, page, wait_s=a.wait)
+                    st = page_state(ctx, page, wait_s=10)
+                    st["Sign in を押す前の入力欄"] = st["入力欄（role=textbox）"]
+                    if not st["入力欄（role=textbox）"] and not a.anonymous:
+                        st.update(click_sign_in(page))
+                        st2 = page_state(ctx, page, wait_s=a.wait)
+                        st.update({k: v for k, v in st2.items() if k != "cookie の数（ドメイン別）"})
                     rep.add("組み合わせ", variant, verdict(st), st)
                 finally:
                     ctx.close()
