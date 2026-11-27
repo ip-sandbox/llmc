@@ -51,6 +51,45 @@ def ctx_block(path: str, text: str) -> str:
     return f'{f}\nLLMC-CTX path="{path}" sha={content_sha(text)} lines={lines}\n{text.rstrip(chr(10))}\nLLMC-CTX-END path="{path}"\n{f}'
 
 
+PASTE = "html"  # html: テキスト＋HTML（S0 で一字一句届いた） / space: 空行を空白 1 文字に / text: テキストのみ
+
+
+def to_clipboard_html(prompt: str) -> str:
+    """プロンプトを HTML の断片にする。```` で囲んだ部分は <pre>、それ以外は段落（S0 の方式 C）。"""
+    import html as H
+    import re as R
+    out, buf, code, fence = [], [], None, None
+    for line in prompt.split("\n"):
+        if code is None:
+            m = R.match(r"^(`{4,})", line)
+            if m:
+                if buf:
+                    out.append("<p>" + "<br>".join(H.escape(x) for x in buf) + "</p>")
+                    buf = []
+                code, fence = [], m.group(1)
+            else:
+                buf.append(line)
+        else:
+            if line == fence:
+                out.append("<pre><code>" + H.escape("\n".join(code)) + "</code></pre>")
+                code = None
+            else:
+                code.append(line)
+    if buf:
+        out.append("<p>" + "<br>".join(H.escape(x) for x in buf) + "</p>")
+    return "".join(out)
+
+
+def put_prompt(prompt: str) -> None:
+    import clip
+    if PASTE == "html":
+        clip.set_text_and_html(prompt, to_clipboard_html(prompt))
+    elif PASTE == "space":
+        clip.set_text("\n".join(" " if x == "" else x for x in prompt.split("\n")))
+    else:
+        clip.set_text(prompt)
+
+
 def build_prompt(tid: str, sc: dict, ws: Path, long_rules: bool, extra: str = "") -> tuple[str, dict, dict]:
     sha = {}
     texts = {}
@@ -165,8 +204,7 @@ def run_scenario(name: str, sc: dict, ws: Path, rep: Report, use_clip: bool) -> 
         else:
             print("  Copilot の【同じチャット】に続けて送ってください。", file=sys.stderr)
         if use_clip:
-            import clip
-            clip.set_text(prompt)
+            put_prompt(prompt)
             print("  プロンプトをクリップボードに入れました。貼り付けて送信し、回答の下の「コピー」を押してください。",
                   file=sys.stderr)
         else:
@@ -257,10 +295,14 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", choices=sorted(SCENARIOS))
     ap.add_argument("--no-clipboard", action="store_true")
+    ap.add_argument("--paste", choices=["html", "space", "text"], default="html",
+                    help="プロンプトの貼り付け方（既定 html。S0 の診断で一字一句届いた方式）")
     ap.add_argument("--replay", action="store_true", help="保存した回答（out\\manual\\*-response-*.txt）をもう一度解析して書き込む")
     a = ap.parse_args()
     if a.replay:
         return replay()
+    global PASTE
+    PASTE = a.paste
     WORK.mkdir(parents=True, exist_ok=True)
     ws = WORK / "workspace"
     names = [a.only] if a.only else ["S1", "S1b", "S2", "S3"]
@@ -268,6 +310,7 @@ def main() -> int:
         names = ["S1", "S1b"]
     rep = Report("manual", "人が送信する方式の PoC（個人の Copilot）")
     rep.add("条件", "規則の版", "INFO", REV)
+    rep.add("条件", "貼り付け方", "INFO", a.paste)
     for n in names:
         sc = SCENARIOS[n]
         if sc["new_chat"]:
