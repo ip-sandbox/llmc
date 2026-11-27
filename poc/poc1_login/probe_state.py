@@ -21,8 +21,11 @@ def page_state(ctx, page, wait_s: float = 30) -> dict:
                 break
         except Exception:  # noqa: BLE001
             pass
-        time.sleep(1)
-    host = urlparse(page.url).hostname or ""
+        page.wait_for_timeout(1000)  # time.sleep ではイベントが処理されない
+    try:
+        host = page.evaluate("location.hostname") or ""
+    except Exception:  # noqa: BLE001
+        host = urlparse(page.url).hostname or ""
     try:
         body = page.inner_text("body", timeout=5000)
     except Exception:  # noqa: BLE001

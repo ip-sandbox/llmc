@@ -25,7 +25,6 @@ from probe_state import page_state, verdict  # noqa: E402
 def click_sign_in(page) -> dict:
     """「Sign in」を押し、残っている cookie で黙ってログインできるかを見る（資格情報は入力しない）。"""
     import time
-    from urllib.parse import urlparse
     from probe_state import SIGNIN
     res = {"Sign in を押した": False, "経由したホスト": []}
     try:
@@ -37,16 +36,19 @@ def click_sign_in(page) -> dict:
         return res
     hosts = res["経由したホスト"]
     t0 = time.time()
-    while time.time() - t0 < 40:
-        h = urlparse(page.url).hostname or ""
+    while time.time() - t0 < 120:
+        try:
+            h = page.evaluate("location.hostname") or ""
+        except Exception:  # noqa: BLE001  遷移中
+            h = ""
         if not hosts or hosts[-1] != h:
             hosts.append(h)
         try:
-            if h.endswith("copilot.com") and page.get_by_role("textbox").count() > 0:
+            if h and not h.startswith("login.") and page.locator("span[role=textbox][contenteditable=true]").count() > 0:
                 break
         except Exception:  # noqa: BLE001
             pass
-        time.sleep(0.5)
+        page.wait_for_timeout(500)
     res["ログインまでの秒数"] = round(time.time() - t0, 1)
     return res
 
