@@ -161,7 +161,11 @@ def parse_response(text, html, tid, sha, ctx_texts, allowed):
     sr = PASTE == "space"
     if html:
         from htmlseg import segments
-        return parse(None, tid, rev=REV, ctx_sha=sha, allowed=ok, segments=segments(html), ctx_text=ctx_texts, space_restore=sr), "HTML の区分"
+        r = parse(None, tid, rev=REV, ctx_sha=sha, allowed=ok, segments=segments(html), ctx_text=ctx_texts, space_restore=sr)
+        # 言語名つきのフェンスは、コピーの HTML で <pre> にならず、Markdown として描画した行の並びになる（S0b の実測）
+        if "<p><span></span></p><div><span>" in html:
+            r.warnings.append("W_LANG_FENCE: 言語名つきのコードブロックがある（コピーの HTML が崩れる）")
+        return r, "HTML の区分"
     plain = text.count("```") == 0 or "LLMC-PLAN" in text.split("```")[0]
     return parse(text, tid, rev=REV, ctx_sha=sha, allowed=ok, plain_copy=plain, ctx_text=ctx_texts, space_restore=sr), \
         ("テキスト（フェンスなしのコピー）" if plain else "テキスト")
