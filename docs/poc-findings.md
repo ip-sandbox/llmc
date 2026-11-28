@@ -358,3 +358,14 @@ Playwright の同期 API は、API を呼んでいる間しかブラウザから
   - AI は「分割出力は規則上できない」と判断した。規則に分割の方法を書けば従う可能性がある（PoC-7 で確かめる）
   - **個人版には 1 日の利用の上限がある**。表示の文言は未記録（`rate_limit_patterns` に使うので、次に出たときに記録する）
 - 残り: 出力の上限の正確な値（400・600 行など）、組織版での入力と出力の上限
+
+### (e) クリップボードの履歴への除外の印（`poc6_io\clip_privacy.py`。Copilot を使わない）
+
+| 確かめたこと | 結果 |
+|---|---|
+| 除外の印（`CanIncludeInClipboardHistory`=0、`CanUploadToCloudClipboard`=0、`ExcludeClipboardContentFromMonitorProcessing`）を付けた文字列は、Win+V の履歴に出ない | **OK**（印なしの A だけが履歴に出た） |
+| 除外の印があっても、ふつうに貼り付けられる | **OK**（メモ帳。Copilot の入力欄への貼り付けも、`echo_fidelity.py` で同じ書き込み方を使って成功している） |
+| llmc の読み取りは、除外の印のあるコピーを読まない | OK |
+| 待ちを終えたとき、自分の書き込みのままならクリップボードを空にする | OK |
+
+- 判断: spec-browser-driver 13.2 の 1・3・7 は確定。リモートデスクトップの下での動作は未確認（使う場合に確かめる）
