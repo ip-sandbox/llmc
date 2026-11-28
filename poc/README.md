@@ -258,9 +258,9 @@ $env:POC_URL = "https://m365.cloud.microsoft/chat"
 
 - 個人版の 1 日の上限に注意。足りなければ `--rounds 5` で減らせる
 
-## PoC-8: 常駐とログインの保持（plan 5.6 の 5。組織版の社内 PC で）
+## PoC-8: ウィンドウ・ロック・ログイン（plan 5.6 の 5。組織版の社内 PC で）
 
-`git pull` の後、poc フォルダで実行する。送信は (b) の `send` だけ（1 回ごとに架空の短い依頼を 1 つ）。記録に本文・画面の文字は残らない。
+v1 はデーモンを作らない（plan 前提 19）、RDP では使わない（前提 20）と決めたので、確かめることを絞った。`git pull` の後、poc フォルダで実行する。送信は (b) の `send` だけ（1 回ごとに架空の短い依頼を 1 つ）。記録に本文・画面の文字は残らない。
 
 ### (d) 朝のログインの状態（送信しない。翌朝に 1 回）
 
@@ -271,18 +271,19 @@ $env:POC_URL = "https://m365.cloud.microsoft/chat"
 - 前の日にログインしたまま、**翌朝、ふだんのログインをする前に** 1 回だけ実行する。切れていたときの画面（ログインの画面への転送か、サインインのボタンか）を記録する。何日も保たれるかは確かめない（1 日 1 回の手動のログインでよいため。plan 前提 18）
 - ログインが切れていたら、`poc1_login\login.py --browser msedge` でログインし直してから続ける（記録は続く）
 
-### (a)(b)(c) 常駐（最小化した画面ありの Edge を、pythonw の別のプロセスで開いたままにする）
+### (a)(b) ウィンドウとロック・スリープ
+
+`ctl.py` は、最小化した Edge を別のプロセスで開いたままにする（本体の v1 とは形が違うが、ウィンドウとロックの確かめにはそのまま使える）。
 
 ```powershell
-.\.venv\Scripts\python.exe poc8_daemon\ctl.py start --url $env:POC_URL   # (a) 起動。この PowerShell を閉じても残るかを見る
-.\.venv\Scripts\python.exe poc8_daemon\ctl.py status                     # 別の PowerShell からでも状態が見える
+.\.venv\Scripts\python.exe poc8_daemon\ctl.py start --url $env:POC_URL
 .\.venv\Scripts\python.exe poc8_daemon\ctl.py send                       # 最小化したまま 1 回送れるか
 .\.venv\Scripts\python.exe poc8_daemon\ctl.py send --delay 60            # (b) 60 秒の間に Win+L でロックし、3 分ほど待って戻る
 .\.venv\Scripts\python.exe poc8_daemon\ctl.py stop
 .\.venv\Scripts\python.exe poc8_daemon\ctl.py report                     # 最後に要約を貼る
 ```
 
-- (a) の続き（できれば）: 常駐の Edge のウィンドウを、タスクバーから開いて元に戻す → `status`。次に、そのウィンドウを × で閉じる → `status` → `send`（開き直して送れるか）
-- (b) の続き（できれば）: RDP で使っている場合は、`send --delay 60` の間に RDP を切断し、数分後につなぎ直す。スリープは、`send --delay 60` の間にスリープし、数分後に復帰する
-- (c) タスクスケジューラ（できれば。先に `stop` しておく）: `ctl.py schedule --url $env:POC_URL`。タスクを作って起動し、60 秒後にタスクを終えて消す。タスクを終えた後も常駐が残るかを記録する。タスクを作れない方針なら、そう表示される
+- (a)（できれば。`stop` の前に）: Edge のウィンドウを、タスクバーから開いて元に戻す → `status`。次に、そのウィンドウを × で閉じる → `status` → `send`（開き直して送れるか）
+- (b) の続き（できれば）: `send --delay 60` の間にスリープし、数分後に復帰する
+- やめた確認: ターミナルを閉じた後も残るか、RDP の切断、`ctl.py schedule`（タスクスケジューラ）。どれもデーモンのための確認だった
 - 記録の元は `out\poc8\events.jsonl`。やり直すときは `stop` の後にこのフォルダを消す

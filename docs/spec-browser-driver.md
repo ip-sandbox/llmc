@@ -6,7 +6,7 @@
 
 - `ChatBackend`（共通インタフェース）と、その Playwright 実装（汎用ドライバ＋サイト別プロファイル）を定める
 - 第一ターゲットは Microsoft 365 Copilot Chat。Copilot の DOM は PoC で調べた。確かめた値と仮の値は、3.2 の例の注で項目ごとに示す
-- ドライバはデーモンの中で動き、要求は直列に処理する（spec-daemon）。ファイルシステムには触らない（ダウンロードを除く）
+- ドライバは llmc のプロセスの中で動く。同時に動く llmc は 1 つだけなので、送信はもともと 1 つずつになる（spec-runtime）。ファイルシステムには触らない（添付の読み取りとダウンロードを除く）
 - 実装は 2 つ。**自動の方式**（Playwright。2〜12 章）と、**人が送信する方式**（OS のクリップボード。13 章）。どちらも同じ `ChatBackend` を実装し、上位（解析・書き込み・ループ）は区別しない
   - 組織の Microsoft 365 Copilot Chat: 自動の方式（PoC で S1〜S3 の往復がすべて合格）
   - 個人の Copilot（copilot.microsoft.com）: 自動操作のブラウザからの送信が、画面の有無やブラウザの種類によらず拒否される。**この拒否を回避しない**。人が送信する方式だけを使う（PoC で S1〜S3 が合格）
@@ -36,7 +36,7 @@
 | データ | 主な項目 |
 |---|---|
 | `ConversationRef` | `url`（続行に使う）、`title`、`site`、`agent`、`created_at` |
-| `OutboundMessage` | `text`、`attachments`（**クライアントが用意したマスキング済みの一時ファイル**のパスの列。デーモンは `%LOCALAPPDATA%\llmc\daemon\staging\` にあるものだけを読む）、`turn_id`（ファイル書式のターン ID）、`expect_protocol`（書式の回答を期待するか）、`blank_line_filler`（空行の代わりの行。spec-file-protocol 9.6。`null` なら空行をそのまま送る） |
+| `OutboundMessage` | `text`、`attachments`（**クライアントが用意したマスキング済みの一時ファイル**のパスの列。その実行の run ディレクトリに置いたものだけを読む）、`turn_id`（ファイル書式のターン ID）、`expect_protocol`（書式の回答を期待するか）、`blank_line_filler`（空行の代わりの行。spec-file-protocol 9.6。`null` なら空行をそのまま送る） |
 | `TurnResult` | `raw_text`、`segments`（区分の列。コピーの HTML・DOM のどちらから作った場合も持つ）、`extract_method`（`copy_html`・`copy_text`・`dom`・`manual_clipboard` のどれか）、`blank_line_filler`（送ったときの値をそのまま返す）、`completion_signals`（どの条件で完了とみなしたか）、`artifacts`（ダウンロードできるファイルの一覧）、`conversation`（送信後の URL）、`timings`、`warnings`。HTML の原文は持たない（診断のフラグがあるときだけ、本人だけが読める記録に残す。spec-security） |
 | `Capabilities` | `max_input_chars`、`attachments`（対応・最大サイズ・最大個数・拡張子）、`downloads`、`agents`、`list_conversations`、`streaming` |
 | イベント | 2.3 を参照 |
@@ -47,7 +47,6 @@
 
 | イベント | 発生元 | 内容 |
 |---|---|---|
-| `queued` | デーモン | キューに入った。`position`（前に何件あるか） |
 | `sending` | ドライバ | 入力を始めた |
 | `sent` | ドライバ | 送信を確認した（4.3） |
 | `first_token` | ドライバ | 回答の要素に文字が現れた |
@@ -71,7 +70,7 @@
 | `AgentUnavailable` | 指定のエージェントが開けない | spec-agent の方針に従う |
 | `ModeMismatch` | サイトのモードが設定と違う（Copilot の「職場」と「Web」など） | 画面でモードを直す。送信はしない |
 | `AttachmentRejected` | 添付に失敗した | 本文への埋め込み |
-| `BrowserCrashed` | ブラウザかページが異常終了した | デーモンが 1 回だけ再起動を試みる |
+| `BrowserCrashed` | ブラウザかページが異常終了した | 送信は失敗として返す。次の送信でブラウザを開き直す（spec-runtime 4.2） |
 | `Cancelled` | 利用者が取り消した | — |
 
 **自動で再送はしない**。送信できたかどうか分からない状態で再送すると、同じ依頼が二重に届き、利用量も二重になるためである。再送するかは呼び出し元（ループエンジンなど）が決める。
@@ -246,7 +245,7 @@ variants:
 
 ### 6.1 ストリーミング
 
-- 回答の要素に `MutationObserver` を仕掛け、変化があれば最大 200 ミリ秒に 1 回、`innerText` をデーモンへ渡す（`expose_binding` を使う）。仕掛けられない場合は 500 ミリ秒ごとの読み取りに切り替える
+- 回答の要素に `MutationObserver` を仕掛け、変化があれば最大 200 ミリ秒に 1 回、`innerText` を Python の側へ渡す（`expose_binding` を使う）。仕掛けられない場合は 500 ミリ秒ごとの読み取りに切り替える
 - 前回のテキストが今回の先頭と一致すれば差分だけを `delta` として送る。一致しなければ（描画のやり直しで前の部分が変わった場合）全体を送り直す
 - ストリーミングのテキストは**表示のためだけの仮のもの**で、解析には使わない。解析には完了後に抽出したテキストを使う
 
@@ -320,7 +319,7 @@ variants:
 | 切り替え | 続行と同じ |
 
 - 送信して最初の回答が出た後のページの URL を、その会話の `url` として保存する。会話ごとの URL が無いサイトでは、続行は「直前の会話」だけとし、`capabilities` で示す
-- 要求ごとに会話を指定するので、キューで他の要求が間に入っても混ざらない（architecture 4 章）
+- 送信ごとに会話を指定するので、セッションの中で対話とループを切り替えても混ざらない（architecture 4 章）
 
 ## 9. 添付
 
@@ -386,12 +385,12 @@ variants:
 
 | 事象 | 検知 | 対応 |
 |---|---|---|
-| ログイン切れ | URL がログイン画面のパターンに一致、またはログインを促す表示 | `LoginRequired`。デーモンはログインが必要な状態になり、以降の要求は即座にこのエラーで返す（spec-auth） |
+| ログイン切れ | URL がログイン画面のパターンに一致、またはログインを促す表示 | `LoginRequired`。ログインが必要な状態になり、ログインし直すまで以降の送信は即座にこのエラーにする（spec-auth） |
 | 生成の失敗 | 回答の要素の中か近くに `error_banner` が出る、またはその文字が `generation_failed_patterns` に一致 | `GenerationFailed`（画面の文言を添える） |
 | モードの不一致 | `mode.required` が `mode_indicator` に一致しない（Copilot が「Web」になっている、など） | `ModeMismatch`。送信しない。送った内容が Web 検索に使われ得るため |
 | レート制限 | `error_banner` か `system_notice` の文字が `rate_limit_patterns` に一致。入力欄が無効になったことも手がかりにする | `RateLimited(kind, retry_after?)`。`kind` は `short`（短い間の制限）か `daily`（1 日の上限。`daily_limit_patterns` に一致）。表示から戻る時刻が読み取れれば添える。`short` は呼び出し元の設定で待って再試行（ループの既定は、上限 30 分まで指数的に待って 3 回）。`daily` は再試行せず、ループを止める（spec-loop 11 章）。個人版の `daily` の表示: 「1 日の上限に達しました」「…午前9:00 にもう一度ご確認ください」（2026-11-28）。組織版は未記録 |
 | 応答なし | 6.3 の上限 | `Timeout`。停止ボタンを押す |
-| ブラウザの異常 | Playwright の接続切れ、ページの異常終了 | `BrowserCrashed`。デーモンがブラウザを 1 回だけ起動し直し、要求そのものは失敗として返す |
+| ブラウザの異常 | Playwright の接続切れ、ページの異常終了 | `BrowserCrashed`。送信そのものは失敗として返し、次の送信でブラウザを開き直す |
 | 予期しないダイアログ | `dialog` イベント、画面を覆う表示 | 既知のもの（お知らせなど）はプロファイルの指定で閉じる。閉じるときは**断る側**のボタン（「閉じる」「後で」など）だけを押し、受け入れる側（「確認」「同意」など）は押さない。それ以外は `SelectorMissing` として報告する |
 
 ## 12. 他サイトへの対応
@@ -405,8 +404,8 @@ variants:
 
 ### 13.1 どこで動くか
 
-- 利用者への案内と、利用者の操作を待つ必要があるので、**クライアントのプロセスの中で動く**（デーモンを経由しない）。案内は `user_action_required` のイベント（2.3）として TUI・CLI に出す
-- デーモンの直列のキューは通らない。同じサイトを自動の方式と同時に使うことは想定しない（人が送信する方式を選んだサイトでは、デーモンはそのサイトのブラウザを開かない）
+- 利用者への案内と、利用者の操作を待つ必要があるので、llmc のプロセスの中で動く（自動の方式と同じ）。案内は `user_action_required` のイベント（2.3）として TUI・CLI に出す
+- 同じサイトを自動の方式と同時に使うことは想定しない（人が送信する方式を選んだサイトでは、llmc はそのサイトのブラウザを開かない）
 - **非対話の実行では使えない**。`--non-interactive`・`--json` の出力・コンソールの無い起動（タスクスケジューラなど。FR-UC2-02・07）では、送信の前に専用の終了コード（`EXIT_NEEDS_HUMAN`。値は spec-shell-integration）で止める
 
 ### 13.2 流れ
