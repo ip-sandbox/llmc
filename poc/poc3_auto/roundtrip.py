@@ -118,6 +118,10 @@ def run_s0(drv: Driver, rep) -> str | None:
             if not text and not html:
                 rep.add(sec, method, "NG", "コピーを横取りできなかった")
                 continue
+            raw = Path(__file__).resolve().parents[1] / "out" / "poc3-auto-raw"
+            raw.mkdir(parents=True, exist_ok=True)
+            (raw / f"S0-{method}-response.txt").write_bytes((text or "").encode("utf-8"))
+            (raw / f"S0-{method}-response.html").write_bytes((html or "").encode("utf-8"))
             body, how = extract(text or "", html)
             c = compare(SAMPLE, body)
             c.pop("差分（先頭 12 行）") if c["一致"] else None
@@ -157,6 +161,12 @@ def run_scenarios(drv: Driver, rep, method: str) -> None:
                 rep.add(sec, "送信と回答", "NG", w)
                 continue
             text, html = drv.copy_last()
+            # 架空の内容なので、原因の調査のために回答の生のテキストと HTML を保存する（レポートには含めない）
+            raw = M.OUT_DIR / "poc3-auto-raw"
+            raw.mkdir(parents=True, exist_ok=True)
+            (raw / f"{name}-response.txt").write_bytes((text or "").encode("utf-8"))
+            (raw / f"{name}-response.html").write_bytes((html or "").encode("utf-8"))
+            (raw / f"{name}-prompt.txt").write_bytes(prompt.encode("utf-8"))
             allowed = {M.path_key(p) for p in sc["allow"]}
             res, how = M.parse_response(text or "", html, tid, sha, ctx_texts, allowed)
             rep.add(sec, "解析", "OK" if res.kind == "complete" else "NG",
