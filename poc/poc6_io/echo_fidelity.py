@@ -12,6 +12,8 @@
     E6: 壊れる形の規則と、代わりの記号の候補（21 行）
     E7: URL がリンクの HTML になるのは、AI に届く前か、回答か（「:」を「⟦:⟧」にして出させる）
     E8: 「[名前]」の直後の「:」を「⟦U+003A⟧」と書く規則を、AI が新しく書くコードで守るか
+    E9: URL の無いメッセージで < > & がそのまま届くか
+    E10: URL を https⟦U+003A⟧// にすれば、リンクにならず < > & もそのまま届くか
 
 使い方:
   個人版（人が送信する）: .\\.venv\\Scripts\\python.exe poc6_io\\echo_fidelity.py [--only E1]
@@ -69,6 +71,12 @@ E6 = "# 架空の形の確認\n" + "".join(f"{x} # L{i:02d}\n" for i, x in enume
 E7 = ("# 架空の URL の形\nx https://example.invalid/path y\nx http://example.invalid/ y\nx www.example.invalid y\n"
       "x example.com y\nx a@example.invalid y\n$u = \"https://example.invalid/a?b=1\"\n<https://example.invalid/>\n")
 E7_NEW = "https" + "://example.invalid/new"
+# E7 の結果: http(s):// は送信の時点でリンクの HTML になって AI に届き、同じメッセージの <https://...> の < > は &lt; &gt; になった。
+# E9: URL の無いメッセージで、< > & がそのまま届くか（コードに多い）
+E9 = ("# 架空の記号の確認\nif (a < b && c > d) { x = a & b; }\nList<int> xs = new List<int>();\n<div class=\"a\">本文</div>\n"
+      "<br>\n&lt; と &amp; と &#x41; はそのまま\nx <- 1\n<<EOF\n<!-- 注釈 -->\n")
+# E10: URL を代わりの記号（https⟦U+003A⟧//）にすれば、リンクにならず、< > & もそのまま届くか
+E10 = E9 + "x https⟦U+003A⟧//example.invalid/path y\n$u = \"http⟦U+003A⟧//example.invalid/a?b=1&c=2\"\n"
 # E8: 規則（spec-file-protocol 9.7）を AI が守るか。送る文脈は代わりの記号にした E4。既存の行はそのまま、新しいコードは AI が書く
 PH = "⟦U+003A⟧"
 E8 = re.sub(r"(\[[A-Za-z0-9_]+\]):", lambda m: m.group(1) + PH,
@@ -95,6 +103,8 @@ CASES = {
     "E6": {"path": "scripts/forms.ps1", "text": E6},
     "E7": {"path": "docs/urls.md", "text": E7, "task": TASK7, "want": E7.replace(":", "⟦:⟧") + E7_NEW + "\n"},
     "E8": {"path": "scripts/sample.ps1", "text": E8, "task": TASK8, "rule_check": True},
+    "E9": {"path": "src/marks.txt", "text": E9},
+    "E10": {"path": "src/marks2.txt", "text": E10},
 }
 
 
