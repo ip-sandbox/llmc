@@ -1,12 +1,16 @@
 # ブラウザドライバ仕様
 
-> **状態: 暫定版**。実物で確かめる仮説は plan.md 5.2 にまとめた。PoC の結果を受けて確定・修正する。
+> **状態: 暫定版（PoC の結果を反映済み）**。実物で確かめる仮説は plan.md 5.2 に、PoC の結果は poc-findings.md にまとめた。
 
 ## 1. 範囲
 
 - `ChatBackend`（共通インタフェース）と、その Playwright 実装（汎用ドライバ＋サイト別プロファイル）を定める
 - 第一ターゲットは Microsoft 365 Copilot Chat。Copilot の実際の DOM は調べていないため、本書の Copilot に関する値は**仮の値**であり、`open-questions.md` の調査項目の結果で確定する
 - ドライバはデーモンの中で動き、要求は直列に処理する（spec-daemon）。ファイルシステムには触らない（ダウンロードを除く）
+- 実装は 2 つ。**自動の方式**（Playwright。2〜12 章）と、**人が送信する方式**（OS のクリップボード。13 章）。どちらも同じ `ChatBackend` を実装し、上位（解析・書き込み・ループ）は区別しない
+  - 組織の Microsoft 365 Copilot Chat: 自動の方式（PoC で S1〜S3 の往復がすべて合格）
+  - 個人の Copilot（copilot.microsoft.com）: 自動操作のブラウザからの送信が、画面の有無やブラウザの種類によらず拒否される。**この拒否を回避しない**。人が送信する方式だけを使う（PoC で S1〜S3 が合格）
+  - 自動の方式が画面の変更で壊れたときの代わりとしても、人が送信する方式を使える
 
 ## 2. 共通インタフェース `ChatBackend`
 
@@ -84,7 +88,7 @@
 profile_version: 1
 site: copilot-m365
 display_name: Microsoft 365 Copilot Chat
-url: https://m365.cloud.microsoft/chat        # 仮。実際の URL を確認する
+url: https://m365.cloud.microsoft/chat        # PoC で確認
 browser:
   channel: msedge          # PoC の結果、組織では Edge（docs/poc-findings.md）
   headless: false          # 組織の PC では Edge のヘッドレスがポリシーで禁止されている。回避しない
@@ -98,18 +102,19 @@ login:
   selectors: []
 
 selectors:
-  # 各項目は候補の列。先頭から試し、最初に見つかったものを使う
-  ready:            ["role=textbox[name=/メッセージ|Message/]"]
-  input:            ["role=textbox[name=/メッセージ|Message/]", "div[contenteditable=true]", "textarea"]
-  send_button:      ["role=button[name=/送信|Send/]"]
+  # 各項目は候補の列。先頭から試し、最初に見つかったものを使う。PoC（組織版・個人版）で確認した値
+  ready:            ["span[role=textbox][contenteditable=true]"]
+  input:            ["span[role=textbox][contenteditable=true]"]   # Lexical。ゼロ幅文字（U+200B・U+200C）が入る
+  send_button:      ["button[aria-label=送信]", "role=button[name=/^送信$|^Send$/]"]
   stop_button:      ["role=button[name=/停止|Stop/]"]
   new_chat:         ["role=button[name=/新しいチャット|New chat/]"]
-  message_list:     ["[role=log]", "main"]
-  user_message:     ["[data-author=user]"]          # 仮
-  assistant_message: ["[data-author=bot]"]          # 仮
+  message_list:     ["main"]
+  user_message:     ["[data-testid=chatQuestion]"]
+  assistant_message: ["[data-testid=copilot-message-div]", "[data-testid=copilot-message-reply-div]"]   # 仮（testid の形は要再確認）
   actions_bar:      []       # 回答全体の操作欄（本文の Markdown の外）。回答の要素の中で探す
-  message_done:     ["role=button[name=/^コピー$|^Copy$/]"]   # 完了後にだけ現れる要素。actions_bar の中だけで探す
-  copy_button:      ["role=button[name=/^コピー$|^Copy$/]"]   # 回答全体のコピー。actions_bar の中だけで探す
+  message_done:     ["button[aria-label=応答のコピー]", "button[aria-label=応答をコピー]", "button[aria-label='Copy response']"]   # 完了後にだけ現れる
+  copy_button:      ["button[aria-label=応答のコピー]", "button[aria-label=応答をコピー]", "button[aria-label='Copy response']"]   # 回答全体のコピー
+  # 会話の URL は送信後に /chat/conversation/<uuid> になる
   code_block:       ["pre"]
   error_banner:     ["[role=alert]"]
   system_notice:    []       # 利用上限などの、画面からのお知らせの要素
@@ -125,7 +130,8 @@ mode:
   required: null           # 例: {indicator_text: "/職場|Work/"}。一致しなければ送信しない（ModeMismatch）
 
 input:
-  modes: [paste_html, fill]                   # PoC の結果、paste_html を第一とする（下の 4.1 の注）
+  modes: [paste_space, paste_html]            # PoC の結果、paste_space を既定とする（下の 4.1 の注）
+  blank_lines: space                          # 空行を空白 1 文字の行にして入れる（spec-file-protocol 9.6）
   max_chars: null                             # null = probe で測る
   newline: paste                              # 改行の入れ方（paste / shift_enter）
   readback: textContent                       # 読み戻しに使うプロパティ
@@ -140,6 +146,7 @@ completion:
 
 extract:
   order: [copy_button, dom]
+  copy_format: html              # コピーの text/html を区分に分けて解析する（text/plain はフェンスの行が消える。7.1）
   code_text: textContent         # pre の中身の取り方（textContent / innerText）。probe で決める
   copy_length_ratio: [0.5, 2.0]  # コピーで取れた長さ / DOM の本文の長さ の許容範囲
 
@@ -167,9 +174,15 @@ variants:
 |---|---|---|---|
 | `fill` | Playwright の `locator.fill`。要素を選んでから、本文を一度に入れる（contenteditable では文字の挿入に相当する） | textarea、contenteditable | リッチエディタでは内部の状態が更新されず、送信ボタンが有効にならないことがある |
 | `insert_text` | Playwright の `keyboard.insert_text`。フォーカスのある位置に、1 回の操作で本文を挿入する（`keydown` などのキーのイベントは出ない） | どちらも | 1 文字ずつの入力ではないので速い。改行の扱いはエディタによって違う |
-| `paste_event` | JavaScript で `DataTransfer` に本文を入れ、入力欄に `paste` イベントを送る | 貼り付けを独自に処理するリッチエディタ | **OS のクリップボードを使わない**。エディタが改行を段落にする、長文を「貼り付けたテキスト」の添付に変える、などの変換が起き得る |
+| `paste_text` | JavaScript で `DataTransfer` に `text/plain` を入れ、入力欄に `paste` イベントを送る | 貼り付けを独自に処理するリッチエディタ | **OS のクリップボードを使わない**。エディタが改行を段落にする、長文を「貼り付けたテキスト」の添付に変える、などの変換が起き得る |
+| `paste_space` | `paste_text` と同じだが、空行を空白 1 文字の行にしてから入れる | Copilot（既定） | 回答の空白だけの行は解析器が空行に戻す（spec-file-protocol 9.6） |
+| `paste_html` | `paste_text` に加えて `text/html` も入れ、文脈のファイルとフェンスの行を `<pre><code>` にする | — | 一字一句届くが、AI の書式の守り方が崩れた |
 
-- **PoC の結果（docs/poc-findings.md）**: Copilot の入力欄（Lexical）では、空行を含むテキストを `fill` やテキストだけの貼り付けで入れると、AI に届く時点で空行が崩れる（`<br>` という文字になる、または空行が増える）。**貼り付けイベントに `text/plain` と `text/html` の両方を入れ、ファイルの部分を `<pre><code>` にする方法（`paste_html`）だけが、一字一句そのまま届いた**（組織版の自動の方式と、個人版の人が送信する方式の両方で確認）。入力欄の中ではコードのブロックになる。そのため、文脈のファイルを含む本文は `paste_html` で入れる。読み戻しの比較は、入力欄がコードのブロックと段落に分かれるので、`textContent` の全体ではなく、コードのブロックごとの中身と送る文脈の中身を比べる
+- **PoC の結果（docs/poc-findings.md）**
+  - Copilot の入力欄（Lexical）では、空行を含むテキストを `fill` や `paste_text` で入れると、AI に届く時点で空行が崩れる。空行が `<br>` という文字列になったり、`# ` の見出しの後に空行が増えたりする
+  - `paste_html` は一字一句そのまま届いた。ただし AI にはフェンスが見えなくなり、回答のファイルをコードブロックで書かないことが増えた
+  - **`paste_space` が、空行の問題と書式の守り方の両方を満たした。** 個人版（人が送信する方式）と組織版（自動の方式）の両方で、S1〜S3 の往復がすべて合格した。そのため既定とする
+- 読み戻しの比較では、空白 1 文字にした行も送る本文どおりかを確かめる
 - 入力した後に入力欄のテキストを読み戻して、送る本文と比べる。比べるときは **NBSP（U+00A0）を空白に戻し、行末の空白を無視するだけ**とし、行頭の空白とタブは比べる（YAML や Python のインデントの崩れを見逃さないため）。一致しなければ次の方式を試す。全部失敗したら `InputRejected`
 - 送信後に、利用者のメッセージとして表示された本文とも同じ方法で比べ、違えば警告を記録する
 - 長文を貼り付けたときに、画面が本文を添付に自動で変える挙動があるかは probe の調査項目とする。変える場合は、その長さの手前を上限（`max_chars`）とみなす
@@ -266,14 +279,15 @@ variants:
 2. 回答の要素の**操作欄（`actions_bar`）の中**で、`copy_button` に一致するボタンを探す。コードブロックのコピーボタンは `pre` の外の見出し部分にあることが多いので、「`pre` の中に無い」だけでは除外できないため
 3. 保存用の変数を空にしてからボタンを押し、変数に値が入るまで待つ（最大 3 秒）
 4. 取れたテキストの長さと、DOM の本文の長さの比が `copy_length_ratio` の範囲外なら、抽出の失敗とする（補助の確認）
-5. 取れたテキストが**生の Markdown か、描画後のテキストか**を判定する。DOM に `pre` があるのに、取れたテキストにフェンスの行が無ければ描画後のテキストとみなす。描画後のテキストにはコードブロックの境界の情報が無いので、DOM 方式を使う
+5. 取れたテキストが**生の Markdown か、描画後のテキストか**を判定する。DOM に `pre` があるのに、取れたテキストにフェンスの行が無ければ描画後のテキストとみなす。描画後のテキストにはコードブロックの境界の情報が無いので、`text/html` があればそれを区分に分けて使い（`copy_format: html`）、無ければ DOM 方式を使う
+   - **Copilot の実測**: 「応答のコピー」は `text/plain` と `text/html` の両方を書き込む。`text/plain` はフェンスの行が消えたテキスト、`text/html` は言語名なしのコードブロックを `<pre><code>` で表す。言語名つきのコードブロックは `<pre>` にならず、Markdown として描画した行の並びになる（`__init__` が太字になる。spec-file-protocol 4.3）。大きなブロックが画像（`<img>`）になったこともある
 6. 書式の回答を期待している場合は、DOM 方式でも抽出して両方を解析する
    - 両方とも `complete` で、ファイルの中身が一致: コピーボタンの結果を採用する
    - 両方とも `complete` で、中身が違う: コピーボタンの結果を採用し、警告を記録する（DOM の `code` 区分の取り方の問題の可能性が高い）
    - 片方だけ `complete`: そちらを採用し、警告を記録する
    - どちらも `complete` でない: コピーボタンの結果を解析の対象にする
 
-コピーボタンで取れるのが生の Markdown なのか、描画後のプレーンテキストなのか、HTML なのかはサイトによって違う。Copilot でどうなるかは調査項目とする。`text/html` しか取れない場合は、HTML から 7.2 と同じ方法で区分付きテキストを作る。
+コピーボタンで取れるのが生の Markdown なのか、描画後のプレーンテキストなのか、HTML なのかはサイトによって違う。Copilot は上の 5 のとおり。`text/html` しか取れない場合は、HTML から 7.2 と同じ方法で区分付きテキストを作る。
 
 ### 7.2 DOM 方式（次善）
 
@@ -374,3 +388,29 @@ variants:
 
 - 新しいサイトは、サイト別プロファイルを追加し、`llmc probe` が全段階で合格すれば対応とする
 - プロファイルで表せない違いは、同梱のフックで吸収する。フックが増えすぎる場合は、そのサイト専用の `ChatBackend` 実装を作る（共通インタフェースは変えない）
+
+## 13. 人が送信する方式（`ManualClipboardBackend`）
+
+自動操作のブラウザからの送信が拒否されるサイト（個人の Copilot）と、自動の方式が壊れたときのために、**画面の操作を利用者がする** `ChatBackend` の実装を持つ。ブラウザは利用者がふだん使うものでよく、llmc はブラウザに触らない。
+
+### 13.1 流れ
+
+1. `send()` で、送る本文を OS のクリップボードに入れる（`text/plain`。空行は空白 1 文字の行にする）。利用者に「新しいチャット / 同じチャットに貼り付けて送信し、回答の『コピー』を押す」よう表示する（新しいチャットにするか同じチャットにするかは、呼び出し元の指定のとおりに表示する）
+2. クリップボードの更新番号（`GetClipboardSequenceNumber`）を 0.4 秒ごとに見て、変わったら中身を読む
+3. 次のすべてを満たすものを回答として受け取る。満たさないものは無視し、利用者に「無視した理由・文字数・先頭の 40 文字」を表示する
+   - ターン ID を含む
+   - `LLMC-CTX path=` を含まない（自分が送った本文のコピーではない）
+   - llmc 自身の表示（コンソールの出力）のコピーではない
+4. 受け取ったら、同じ時点の `text/html`（`CF_HTML`）も読み、自動の方式と同じく区分に分けて解析する（7.1 の 5）
+5. 無視したコピーのうち `LLMC` を含むものは、調査のために記録に残す（架空の内容でなければ、記録の置き場は spec-security の扱いに従う）
+
+### 13.2 制約
+
+| 項目 | 扱い |
+|---|---|
+| クリップボード | 利用者のクリップボードを上書きする（利用者が操作しているので許容する）。自動の方式の「OS のクリップボードを使わない」規則（7.1）はこの方式には当てはまらない |
+| ストリーミング・取り消し | できない（`capabilities().streaming = false`）。`cancel()` は待ちをやめるだけ |
+| 完了判定 | 利用者が「コピー」を押した時点を完了とみなす。途中で押した場合は、解析で `truncated` になり、続きの依頼になる |
+| 会話の指定 | 会話の URL は分からない。`ConversationRef` は「新しい / 同じ」の指定だけを持つ |
+| 待ち時間 | 既定 30 分。超えたら `Timeout`。ループでは、各ラウンドで利用者の操作が要るので、無人の実行には使えない（`--unattended` では拒否する） |
+| 1 ラウンドの手間 | 貼り付け・送信・コピーの 3 操作（PoC で 10〜25 秒程度の待ち） |

@@ -118,6 +118,13 @@ PoC の結果と設計への影響は `docs/poc-findings.md` にまとめる。
 
 PoC-0 と PoC-4 は Copilot を使わないので、最初にまとめて実行してもらう。
 
+**進み具合（2026-11-28）**: PoC-0・PoC-4・PoC-1・PoC-2・PoC-3・PoC-1b・PoC-2b を終えた（結果は docs/poc-findings.md）。
+
+- 個人の Copilot は、自動操作のブラウザからの送信が拒否される。そのため PoC-2・PoC-3 は、人が送信する方式（spec-browser-driver 13 章）で行った
+- 組織の Copilot は、最小化した画面ありの Edge で、自動の方式が動いた
+- 書式の往復（S1〜S3）は、規則の版 f9be67 と貼り付け方 `paste_space` で、個人版（人が送信）と組織版（自動）の両方で合格した
+- 残りは PoC-5 と、ログインの保持の期間（数日後の `poc1_login\check.py`）
+
 ### 5.4 注意
 
 - 個人のアカウントの Copilot には、**社内の情報を送らない**。PoC の依頼文は、すべて架空の内容にする

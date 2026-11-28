@@ -64,6 +64,7 @@ flowchart TB
 | IPC サーバ・キュー | 要求の受け付け、直列化、進捗イベントの配信、キャンセル、送信回数の上限（NFR-14）の確認 | spec-daemon |
 | ChatBackend | 共通インタフェース（会話・送信・ストリーム・抽出・添付・ダウンロード） | spec-browser-driver |
 | Playwright ドライバ | サイト別プロファイルに従う画面操作 | spec-browser-driver |
+| 人が送信する方式 | クリップボード経由で、利用者が貼り付け・送信・コピーをする `ChatBackend`（自動操作の送信が拒否される個人の Copilot 用） | spec-browser-driver 13 章 |
 | 認証監視 | ログイン状態の判定、セッション切れの検知 | spec-auth |
 
 ## 3. プロセス構成
@@ -185,6 +186,7 @@ src/llmc/
   cli/  tui/  client/  daemon/
   backend/            ChatBackend インタフェース
     playwright/       汎用ドライバ
+    manual/           人が送信する方式（クリップボード）
     sites/            同梱のサイト別プロファイル（copilot-m365.yaml など）
   protocol/           ファイル書式の解析器・生成器
     rules/v1/         規則の原本
