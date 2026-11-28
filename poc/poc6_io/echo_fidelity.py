@@ -42,10 +42,16 @@ SPECIALS = {"U+3000 全角空白": "\u3000", "U+200B ゼロ幅空白": "\u200b",
             "U+2028 行区切り": "\u2028", "U+00AD ソフトハイフン": "\u00ad", "U+FF5E 全角チルダ": "\uff5e", "U+301C 波ダッシュ": "\u301c"}
 E3 = ("# 架空の文字の確認\n" + "".join(f"{k}:[{v}]\n" for k, v in SPECIALS.items())
       + "代わりの記号: [⟦U+00A0⟧] と [⟦U+00A0⟧⟦U+00A0⟧]\n最後の行\n")
+# 公開されている類似の実装（copilot-operator）の報告: Copilot は「[名前]:」を壊す（[math]::Round → :Round）。コードブロックの中でも。
+# Markdown の参照リンクの定義（[name]: url）として扱われると見られる。PowerShell の型の書き方と、Markdown・INI の形を確かめる
+E4 = ("# 架空の PowerShell のスクリプト\n$x = 3.14159\n$r = [math]::Round($x, 2)\n$s = [string]::Join(',', @('a', 'b'))\n"
+      "[int]$n = 5\n[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\nWrite-Output \"[info]: done\"\n"
+      "# 参照リンクの形\n[link]: https://example.invalid/path\n[a][b]\n[section]\nkey=value\n")
 CASES = {
     "E1": {"path": "docs/sample.md", "text": E1},
     "E2": {"path": "config/sample.yaml", "text": E2},
     "E3": {"path": "docs/chars.md", "text": E3},
+    "E4": {"path": "scripts/sample.ps1", "text": E4},
 }
 ADD = "# 確認済み"
 TASK = (f"送ったファイルの最後に 1 行「{ADD}」を追加してください。それ以外は 1 文字も変えずに、ファイル全体を出力してください。"
