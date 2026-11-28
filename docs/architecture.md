@@ -34,7 +34,7 @@ flowchart TB
     PW[Playwright ドライバ<br/>サイト別プロファイル]
     AU[認証監視]
   end
-  BR[[Chromium<br/>persistent context]]
+  BR[[Edge（画面あり・最小化）<br/>persistent context]]
   RULES[(規則の原本<br/>rules/v1)]
   AG[(エージェント指示文<br/>生成物)]
 
@@ -73,11 +73,11 @@ flowchart TB
 |---|---|---|---|
 | クライアント | ユーザー・スクリプト・タスクスケジューラ | コマンド 1 回分 | `llmc.exe`（venv の console script） |
 | デーモン | クライアントが必要に応じて自動起動、またはログオン時に自動起動 | アイドル時間の上限（既定 2 時間）で自動終了 | `pythonw.exe` でコンソールを持たない。1 ユーザーに 1 つ。クライアントがジョブの中（タスクスケジューラなど）で動いている場合も一緒に終了させられないよう、ジョブから切り離して起動する（`CREATE_BREAKAWAY_FROM_JOB`。許されない場合の扱いは spec-daemon）。`pythonw` の下で Playwright のドライバが起動できるかは実装の初期に確かめる |
-| Chromium | デーモンが起動 | デーモンと同じ | persistent context。プロファイルは `%LOCALAPPDATA%\llmc\profiles\<site>` |
+| ブラウザ（画面ありの Edge、最小化） | デーモンが起動 | デーモンと同じ | persistent context。プロファイルは `%LOCALAPPDATA%\llmc\profiles\<site>`。組織の PC ではヘッドレスがポリシーで禁止されている（回避しない）。人が送信する方式のサイトでは起動しない |
 | ユーザー定義のコマンド | 実行器が起動 | タイムアウトまで | Job Object に入れ、終了時にプロセスツリーごと終了する |
 | 手元変換のスクリプト（UC5 方式 C） | 実行器が起動 | タイムアウトまで | 確認または事前承認が必須 |
 
-`llmc login` だけは画面ありのブラウザが必要なので、デーモンを一時停止して同じプロファイルを画面ありで開く（spec-auth）。
+`llmc login` は、常駐しているブラウザのウィンドウを元に戻してログインの画面を出す（ブラウザは常に画面ありなので、デーモンを止める必要は無い。spec-auth）。人が送信する方式（spec-browser-driver 13 章）はクライアントのプロセスの中で動き、デーモンを経由しない。
 
 ## 4. プロセス間通信
 

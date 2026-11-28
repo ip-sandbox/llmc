@@ -5,7 +5,7 @@
 ## 1. 範囲
 
 - `ChatBackend`（共通インタフェース）と、その Playwright 実装（汎用ドライバ＋サイト別プロファイル）を定める
-- 第一ターゲットは Microsoft 365 Copilot Chat。Copilot の実際の DOM は調べていないため、本書の Copilot に関する値は**仮の値**であり、`open-questions.md` の調査項目の結果で確定する
+- 第一ターゲットは Microsoft 365 Copilot Chat。Copilot の DOM は PoC で調べた。確かめた値と仮の値は、3.2 の例の注で項目ごとに示す
 - ドライバはデーモンの中で動き、要求は直列に処理する（spec-daemon）。ファイルシステムには触らない（ダウンロードを除く）
 - 実装は 2 つ。**自動の方式**（Playwright。2〜12 章）と、**人が送信する方式**（OS のクリップボード。13 章）。どちらも同じ `ChatBackend` を実装し、上位（解析・書き込み・ループ）は区別しない
   - 組織の Microsoft 365 Copilot Chat: 自動の方式（PoC で S1〜S3 の往復がすべて合格）
@@ -36,8 +36,8 @@
 | データ | 主な項目 |
 |---|---|
 | `ConversationRef` | `url`（続行に使う）、`title`、`site`、`agent`、`created_at` |
-| `OutboundMessage` | `text`、`attachments`（**クライアントが用意したマスキング済みの一時ファイル**のパスの列。デーモンは `%LOCALAPPDATA%\llmc\daemon\staging\` にあるものだけを読む）、`turn_id`（ファイル書式のターン ID）、`expect_protocol`（書式の回答を期待するか） |
-| `TurnResult` | `raw_text`、`segments`（DOM 復元の場合の区分）、`extract_method`（`copy_button` か `dom`）、`completion_signals`（どの条件で完了とみなしたか）、`artifacts`（ダウンロードできるファイルの一覧）、`conversation`（送信後の URL）、`timings`、`warnings` |
+| `OutboundMessage` | `text`、`attachments`（**クライアントが用意したマスキング済みの一時ファイル**のパスの列。デーモンは `%LOCALAPPDATA%\llmc\daemon\staging\` にあるものだけを読む）、`turn_id`（ファイル書式のターン ID）、`expect_protocol`（書式の回答を期待するか）、`blank_line_filler`（空行の代わりの行。spec-file-protocol 9.6。`null` なら空行をそのまま送る） |
+| `TurnResult` | `raw_text`、`segments`（区分の列。コピーの HTML・DOM のどちらから作った場合も持つ）、`extract_method`（`copy_html`・`copy_text`・`dom`・`manual_clipboard` のどれか）、`blank_line_filler`（送ったときの値をそのまま返す）、`completion_signals`（どの条件で完了とみなしたか）、`artifacts`（ダウンロードできるファイルの一覧）、`conversation`（送信後の URL）、`timings`、`warnings`。HTML の原文は持たない（診断のフラグがあるときだけ、本人だけが読める記録に残す。spec-security） |
 | `Capabilities` | `max_input_chars`、`attachments`（対応・最大サイズ・最大個数・拡張子）、`downloads`、`agents`、`list_conversations`、`streaming` |
 | イベント | 2.3 を参照 |
 
@@ -55,6 +55,7 @@
 | `completing` | ドライバ | 完了の条件の確認を始めた |
 | `extracting` | ドライバ | 抽出を始めた |
 | `artifact_found` | ドライバ | 回答の中にダウンロードできるファイルを見つけた |
+| `user_action_required` | ドライバ（人が送信する方式） | 利用者の操作を待っている。`action`（`paste_and_send`・`copy_response`）、`conversation`（`new` か `same`）、`ignored`（無視したコピーの理由と文字数。中身は含めない） |
 
 ### 2.4 エラー
 
@@ -82,7 +83,9 @@
 - 同梱の既定値: `src/llmc/backend/sites/<site>.yaml`
 - 利用者の上書き: `%LOCALAPPDATA%\llmc\sites\<site>.yaml`（同じキーだけを上書きする）
 
-### 3.2 形式（Copilot 用の例。値は仮）
+### 3.2 形式（Copilot 用の例）
+
+注の「確認済み」は PoC で確かめた値、「仮」はまだ確かめていない値。
 
 ```yaml
 profile_version: 1
@@ -102,11 +105,13 @@ login:
   selectors: []
 
 selectors:
-  # 各項目は候補の列。先頭から試し、最初に見つかったものを使う。PoC（組織版・個人版）で確認した値
+  # 各項目は候補の列。先頭から試し、最初に見つかったものを使う。
+  # 確認済み: ready・input・send_button・stop_button・user_message・message_done・copy_button。
+  # 仮: new_chat・message_list・assistant_message・actions_bar 以下
   ready:            ["span[role=textbox][contenteditable=true]"]
   input:            ["span[role=textbox][contenteditable=true]"]   # Lexical。ゼロ幅文字（U+200B・U+200C）が入る
   send_button:      ["button[aria-label=送信]", "role=button[name=/^送信$|^Send$/]"]
-  stop_button:      ["role=button[name=/停止|Stop/]"]
+  stop_button:      ["role=button[name=/停止|Stop/]"]                  # 確認済み（送信の 0.4 秒後に現れた）
   new_chat:         ["role=button[name=/新しいチャット|New chat/]"]
   message_list:     ["main"]
   user_message:     ["[data-testid=chatQuestion]"]
@@ -130,11 +135,11 @@ mode:
   required: null           # 例: {indicator_text: "/職場|Work/"}。一致しなければ送信しない（ModeMismatch）
 
 input:
-  modes: [paste_space, paste_html]            # PoC の結果、paste_space を既定とする（下の 4.1 の注）
-  blank_lines: space                          # 空行を空白 1 文字の行にして入れる（spec-file-protocol 9.6）
-  max_chars: null                             # null = probe で測る
+  modes: [paste_text]                         # 確認済み。貼り付けイベントでテキストを入れる。読み戻しが一致しなければ InputRejected（自動では他の方式に切り替えない）
+  blank_lines: filler                         # 確認済み。空行を代わりの行にして入れる（spec-file-protocol 9.6）。raw = そのまま
+  max_chars: 8000                             # 仮。送信して測る（PoC-6）
   newline: paste                              # 改行の入れ方（paste / shift_enter）
-  readback: textContent                       # 読み戻しに使うプロパティ
+  readback: paragraphs                        # 仮。段落（<p>）ごとに textContent を読み、改行でつなぐ。PoC-6 で確かめる
 
 completion:
   require_any: [stop_button_gone, message_done]
@@ -175,22 +180,23 @@ variants:
 | `fill` | Playwright の `locator.fill`。要素を選んでから、本文を一度に入れる（contenteditable では文字の挿入に相当する） | textarea、contenteditable | リッチエディタでは内部の状態が更新されず、送信ボタンが有効にならないことがある |
 | `insert_text` | Playwright の `keyboard.insert_text`。フォーカスのある位置に、1 回の操作で本文を挿入する（`keydown` などのキーのイベントは出ない） | どちらも | 1 文字ずつの入力ではないので速い。改行の扱いはエディタによって違う |
 | `paste_text` | JavaScript で `DataTransfer` に `text/plain` を入れ、入力欄に `paste` イベントを送る | 貼り付けを独自に処理するリッチエディタ | **OS のクリップボードを使わない**。エディタが改行を段落にする、長文を「貼り付けたテキスト」の添付に変える、などの変換が起き得る |
-| `paste_space` | `paste_text` と同じだが、空行を空白 1 文字の行にしてから入れる | Copilot（既定） | 回答の空白だけの行は解析器が空行に戻す（spec-file-protocol 9.6） |
-| `paste_html` | `paste_text` に加えて `text/html` も入れ、文脈のファイルとフェンスの行を `<pre><code>` にする | — | 一字一句届くが、AI の書式の守り方が崩れた |
+| `paste_html` | `paste_text` に加えて `text/html` も入れ、文脈のファイルとフェンスの行を `<pre><code>` にする | — | 一字一句届くが、AI の書式の守り方が崩れた。既定の候補に入れない |
+
+空行の扱い（`blank_lines`）は入力の方式とは別の設定で、どの方式にも当てはまる。PoC で `paste_space` と呼んだものは、`paste_text`＋`blank_lines: filler` に当たる。
 
 - **PoC の結果（docs/poc-findings.md）**
   - Copilot の入力欄（Lexical）では、空行を含むテキストを `fill` や `paste_text` で入れると、AI に届く時点で空行が崩れる。空行が `<br>` という文字列になったり、`# ` の見出しの後に空行が増えたりする
   - `paste_html` は一字一句そのまま届いた。ただし AI にはフェンスが見えなくなり、回答のファイルをコードブロックで書かないことが増えた
   - **`paste_space` が、空行の問題と書式の守り方の両方を満たした。** 個人版（人が送信する方式）と組織版（自動の方式）の両方で、S1〜S3 の往復がすべて合格した。そのため既定とする
-- 読み戻しの比較では、空白 1 文字にした行も送る本文どおりかを確かめる
-- 入力した後に入力欄のテキストを読み戻して、送る本文と比べる。比べるときは **NBSP（U+00A0）を空白に戻し、行末の空白を無視するだけ**とし、行頭の空白とタブは比べる（YAML や Python のインデントの崩れを見逃さないため）。一致しなければ次の方式を試す。全部失敗したら `InputRejected`
+- 読み戻しの比較では、代わりの行にした行も送る本文どおりかを確かめる。PoC で、貼り付けイベントでは各行が `<p>` になり、入力欄の `textContent` の全体では改行が失われると分かったので、段落ごとに読んで改行でつなぐ（`readback: paragraphs`。PoC-6 で確かめる）
+- 入力した後に入力欄のテキストを読み戻して、送る本文と比べる。比べるときは **NBSP（U+00A0）を空白に戻し、ゼロ幅文字を除き、行末の空白を無視するだけ**とし、行頭の空白とタブは比べる（YAML や Python のインデントの崩れを見逃さないため）。一致しなければ `modes` の次の方式を試し、全部失敗したら `InputRejected`。`modes` に書いていない方式には切り替えない
 - 送信後に、利用者のメッセージとして表示された本文とも同じ方法で比べ、違えば警告を記録する
 - 長文を貼り付けたときに、画面が本文を添付に自動で変える挙動があるかは probe の調査項目とする。変える場合は、その長さの手前を上限（`max_chars`）とみなす
 - 文字の入力（`type`）は使わない（遅く、Enter で送信されてしまう）
 
 ### 4.2 長文
 
-- `max_chars` は `llmc probe --measure-input` で測る。入力欄に長さを変えて入れ、読み戻しの一致、文字数の表示、送信ボタンの状態から上限を二分探索で求める。**送信はしないので利用量を消費しない**
+- PoC で、Copilot の入力欄には上限が無い（128,000 文字まで入り、送信ボタンも有効のまま）と分かった。上限は送信したときにサーバ側で決まるので、**送信せずには測れない**。`llmc probe --measure-input` は、架空の文を長さを変えて**送信し**、失敗の表示と添付への変換の有無から上限を求める（利用量を使う。回数を表示して確認を求める）。結果はプロファイルの `max_chars` に書く
 - 上限を超える場合の方針（順序）
 
 | 順序 | 方針 | 担当 |
@@ -278,14 +284,14 @@ variants:
    - どの経路でも、**OS のクリップボードには何も書き込まない**（利用者のクリップボードを上書きしない。参考実装 #12）。probe では、画面ありの実行で OS のクリップボードが変わっていないことも確かめる
 2. 回答の要素の**操作欄（`actions_bar`）の中**で、`copy_button` に一致するボタンを探す。コードブロックのコピーボタンは `pre` の外の見出し部分にあることが多いので、「`pre` の中に無い」だけでは除外できないため
 3. 保存用の変数を空にしてからボタンを押し、変数に値が入るまで待つ（最大 3 秒）
-4. 取れたテキストの長さと、DOM の本文の長さの比が `copy_length_ratio` の範囲外なら、抽出の失敗とする（補助の確認）
+4. 取れたもの（HTML なら区分のテキストを連結したもの）の長さと、DOM の本文のテキストの長さの比が `copy_length_ratio` の範囲外なら、抽出の失敗とする（補助の確認）
 5. 取れたテキストが**生の Markdown か、描画後のテキストか**を判定する。DOM に `pre` があるのに、取れたテキストにフェンスの行が無ければ描画後のテキストとみなす。描画後のテキストにはコードブロックの境界の情報が無いので、`text/html` があればそれを区分に分けて使い（`copy_format: html`）、無ければ DOM 方式を使う
    - **Copilot の実測**: 「応答のコピー」は `text/plain` と `text/html` の両方を書き込む。`text/plain` はフェンスの行が消えたテキスト、`text/html` は言語名なしのコードブロックを `<pre><code>` で表す。言語名つきのコードブロックは `<pre>` にならず、Markdown として描画した行の並びになる（`__init__` が太字になる。spec-file-protocol 4.3）。大きなブロックが画像（`<img>`）になったこともある
-6. 書式の回答を期待している場合は、DOM 方式でも抽出して両方を解析する
+6. 書式の回答を期待している場合は、DOM 方式でも抽出して両方を解析する（**照合の補助**。DOM 方式の忠実さ（H-06）が probe で合格するまでは、DOM の結果を書き込みには使わない）
    - 両方とも `complete` で、ファイルの中身が一致: コピーボタンの結果を採用する
-   - 両方とも `complete` で、中身が違う: コピーボタンの結果を採用し、警告を記録する（DOM の `code` 区分の取り方の問題の可能性が高い）
-   - 片方だけ `complete`: そちらを採用し、警告を記録する
-   - どちらも `complete` でない: コピーボタンの結果を解析の対象にする
+   - 両方とも `complete` で、中身が違う: ループでは `invalid` として出し直しを依頼し、記録に残す（どちらが正しいか決められないため）。対話（UC1・UC4）では利用者に差を示して選ばせる
+   - コピーボタンだけ `complete`: コピーボタンの結果を採用し、警告を記録する
+   - DOM だけ `complete`: probe で DOM 方式が合格している場合に限り DOM の結果を採用する。それ以外はコピーボタンの結果を解析の対象にする
 
 コピーボタンで取れるのが生の Markdown なのか、描画後のプレーンテキストなのか、HTML なのかはサイトによって違う。Copilot は上の 5 のとおり。`text/html` しか取れない場合は、HTML から 7.2 と同じ方法で区分付きテキストを作る。
 
@@ -350,12 +356,14 @@ variants:
 |---|---|
 | 1. 起動 | ブラウザの起動、`url` の表示、ログイン状態 |
 | 2. セレクタ | すべてのセレクタについて、見つかったか、何番目の候補か |
-| 3. 入力 | 各入力方式の読み戻し。`--measure-input` で上限を測る。長文の添付への自動変換の有無 |
+| 3. 入力 | 各入力方式の読み戻し。`--measure-input` で上限を測る（送信する。4.2）。長文の添付への自動変換の有無 |
 | 4. 往復 | 短い依頼を送り、送信の確認、回答の特定、完了判定、抽出（両方式）を確かめる |
 | 5. 書式 | `__init__.py`、入れ子のフェンス、タブ、行末の空白、日本語を含む書式の回答を依頼し、両方式の抽出結果を解析して比べる。コピーで取れるのが生の Markdown かを判定する。`code_text` の推奨値を決める。OS のクリップボードが変わっていないか |
 | 6. 報告 | 段階ごとの合否、推奨する設定（どの入力方式、どの抽出方式）、見つかった問題 |
 
-### 10.4 ブラウザと SSO の組み合わせの調査（最優先）
+### 10.4 ブラウザと SSO の組み合わせの調査（PoC-1・1b で実施済み）
+
+**結果**: 組織の PC では Edge のヘッドレスがポリシーで禁止されていた（回避しない）。画面ありの Edge で、ログインしたプロファイルを使い続けられた。最小化しても処理は間引かれなかった。個人の Copilot は、どの組み合わせでも送信が拒否された（13 章）。ログインの保持の期間は PoC-8 で確かめる。以下は調査の計画として残す。
 
 社内の Entra ID に「準拠デバイス必須」などの条件付きアクセスがある場合、Playwright 同梱の Chromium はデバイスの情報を渡せず、ログインできない可能性がある。ヘッドレスの実行では UA（`HeadlessChrome`）で拒否される可能性もある。また Playwright 1.49 以降、ヘッドレスの既定は別のバイナリ（`chromium-headless-shell`）で、画面ありで行うログインとは別のバイナリで同じプロファイルを使うことになる。
 
@@ -377,8 +385,8 @@ variants:
 | 事象 | 検知 | 対応 |
 |---|---|---|
 | ログイン切れ | URL がログイン画面のパターンに一致、またはログインを促す表示 | `LoginRequired`。デーモンはログインが必要な状態になり、以降の要求は即座にこのエラーで返す（spec-auth） |
-| 生成の失敗 | 回答の要素の中か近くに `error_banner` が出る、またはその文字が `generation_failed_patterns` に一致 |
-| モードの不一致 | `mode.required` が `mode_indicator` に一致しない（Copilot が「Web」になっている、など） | `ModeMismatch`。送信しない。送った内容が Web 検索に使われ得るため | `GenerationFailed`（画面の文言を添える） |
+| 生成の失敗 | 回答の要素の中か近くに `error_banner` が出る、またはその文字が `generation_failed_patterns` に一致 | `GenerationFailed`（画面の文言を添える） |
+| モードの不一致 | `mode.required` が `mode_indicator` に一致しない（Copilot が「Web」になっている、など） | `ModeMismatch`。送信しない。送った内容が Web 検索に使われ得るため |
 | レート制限 | `error_banner` か `system_notice` の文字が `rate_limit_patterns` に一致 | `RateLimited`。表示から待ち時間が読み取れれば添える。自動で待つかは呼び出し元の設定（ループの既定は、上限 30 分まで指数的に待って再試行 3 回） |
 | 応答なし | 6.3 の上限 | `Timeout`。停止ボタンを押す |
 | ブラウザの異常 | Playwright の接続切れ、ページの異常終了 | `BrowserCrashed`。デーモンがブラウザを 1 回だけ起動し直し、要求そのものは失敗として返す |
@@ -393,24 +401,38 @@ variants:
 
 自動操作のブラウザからの送信が拒否されるサイト（個人の Copilot）と、自動の方式が壊れたときのために、**画面の操作を利用者がする** `ChatBackend` の実装を持つ。ブラウザは利用者がふだん使うものでよく、llmc はブラウザに触らない。
 
-### 13.1 流れ
+### 13.1 どこで動くか
 
-1. `send()` で、送る本文を OS のクリップボードに入れる（`text/plain`。空行は空白 1 文字の行にする）。利用者に「新しいチャット / 同じチャットに貼り付けて送信し、回答の『コピー』を押す」よう表示する（新しいチャットにするか同じチャットにするかは、呼び出し元の指定のとおりに表示する）
-2. クリップボードの更新番号（`GetClipboardSequenceNumber`）を 0.4 秒ごとに見て、変わったら中身を読む
-3. 次のすべてを満たすものを回答として受け取る。満たさないものは無視し、利用者に「無視した理由・文字数・先頭の 40 文字」を表示する
-   - ターン ID を含む
-   - `LLMC-CTX path=` を含まない（自分が送った本文のコピーではない）
-   - llmc 自身の表示（コンソールの出力）のコピーではない
-4. 受け取ったら、同じ時点の `text/html`（`CF_HTML`）も読み、自動の方式と同じく区分に分けて解析する（7.1 の 5）
-5. 無視したコピーのうち `LLMC` を含むものは、調査のために記録に残す（架空の内容でなければ、記録の置き場は spec-security の扱いに従う）
+- 利用者への案内と、利用者の操作を待つ必要があるので、**クライアントのプロセスの中で動く**（デーモンを経由しない）。案内は `user_action_required` のイベント（2.3）として TUI・CLI に出す
+- デーモンの直列のキューは通らない。同じサイトを自動の方式と同時に使うことは想定しない（人が送信する方式を選んだサイトでは、デーモンはそのサイトのブラウザを開かない）
+- **非対話の実行では使えない**。`--non-interactive`・`--json` の出力・コンソールの無い起動（タスクスケジューラなど。FR-UC2-02・07）では、送信の前に専用の終了コード（`EXIT_NEEDS_HUMAN`。値は spec-shell-integration）で止める
 
-### 13.2 制約
+### 13.2 流れ
+
+1. `send()` で、送る本文を OS のクリップボードに入れる（`text/plain`。空行は代わりの行にする）。書き込むときに次の形式も入れ、クリップボードの履歴とクラウドへの同期に残さない（PoC-6 で効果を確かめる）
+   - `ExcludeClipboardContentFromMonitorProcessing`
+   - `CanIncludeInClipboardHistory` = 0、`CanUploadToCloudClipboard` = 0
+2. 利用者に「新しいチャット / 同じチャットに貼り付けて送信し、回答の『コピー』を押す」よう案内する（新しいチャットにするか同じチャットにするかは、呼び出し元の指定のとおり）
+3. クリップボードの更新番号（`GetClipboardSequenceNumber`）を 0.4 秒ごとに見て、変わったら中身を読む
+   - 除外の印（`ExcludeClipboardContentFromMonitorProcessing` など。パスワード管理ソフトが付ける）があるものは**読まない**
+   - テキストと HTML は **1 回の `OpenClipboard` の中で**読み、読む前と後で更新番号が変わっていないことを確かめる（間に別のコピーが入った場合は読み直す）
+4. 次のすべてを満たすものを回答として受け取る
+   - `text/html`（`CF_HTML`）があり、`SourceURL` が期待するサイトの URL である
+   - 区分に分けたとき、**現在のターン ID を持つ `LLMC-DONE` か `LLMC-PLAN`** がある（書式の回答を期待しない場合は、ターン ID を含むこと）
+   - 送った本文を正規化したものと同じではない（自分のプロンプトのコピーを取り違えない。`LLMC-CTX` の有無だけに頼らない）
+5. 満たさないものは無視し、利用者に**理由と文字数だけ**を示す（中身は表示も保存もしない。パスワードなどを画面や記録に出さないため）。診断のフラグ（`--debug-clipboard`）があるときだけ、書式の行を含むものを本人だけが読める記録に残す
+6. コンソールにはターン ID の全体を出さない（先頭 2 文字だけ）。利用者がコンソールの出力をコピーしても受け取らないため
+7. 待ちを終えるとき（受け取った、時間切れ、取り消し）、クリップボードの更新番号が自分の書き込みのときのままなら、クリップボードを空にする（プロンプトを残さない）。回答のコピーは利用者のものなので消さない
+
+### 13.3 制約
 
 | 項目 | 扱い |
 |---|---|
-| クリップボード | 利用者のクリップボードを上書きする（利用者が操作しているので許容する）。自動の方式の「OS のクリップボードを使わない」規則（7.1）はこの方式には当てはまらない |
-| ストリーミング・取り消し | できない（`capabilities().streaming = false`）。`cancel()` は待ちをやめるだけ |
+| クリップボード | 利用者のクリップボードを上書きする（利用者が操作しているので許容する）。自動の方式の「OS のクリップボードを使わない」規則（7.1）はこの方式には当てはまらない。履歴・同期への除外は 13.2 の 1 |
+| ストリーミング・取り消し | できない（`capabilities().streaming = false`）。`cancel()`（Ctrl+C）は待ちをやめるだけで、画面の生成は止まらない（FR-COM-11 の例外） |
 | 完了判定 | 利用者が「コピー」を押した時点を完了とみなす。途中で押した場合は、解析で `truncated` になり、続きの依頼になる |
+| コードブロックごとのコピー | `LLMC-DONE`・`LLMC-PLAN` が無いので受け取らない（13.2 の 4） |
 | 会話の指定 | 会話の URL は分からない。`ConversationRef` は「新しい / 同じ」の指定だけを持つ |
-| 待ち時間 | 既定 30 分。超えたら `Timeout`。ループでは、各ラウンドで利用者の操作が要るので、無人の実行には使えない（`--unattended` では拒否する） |
+| 待ち時間 | 既定 30 分。超えたら `Timeout` |
+| リモートデスクトップ | クリップボードの転送の下での動作は PoC-6 で確かめる |
 | 1 ラウンドの手間 | 貼り付け・送信・コピーの 3 操作（PoC で 10〜25 秒程度の待ち） |
