@@ -161,3 +161,39 @@ $env:POC_URL = "https://m365.cloud.microsoft/chat"
 - Edge のウィンドウが開いて最小化される。終わるまで（数分）触らない
 - 結果: `out\poc3-auto-report.md`（会話の本文は含まない）。全行を詳細も含めて貼ってほしい
 - 入力方法の診断だけ: `--only-s0`。診断を飛ばして入力方法を指定: `--method paste_html`
+
+## PoC-6: 入出力と抽出の忠実さ（plan 5.6 の 1）
+
+個人版で、人が送信する方式で行う（組織版は最後に 1 回だけ確認する）。
+
+### (a)(d) 空行の代わりの行と、コピーの HTML の忠実さ
+
+```powershell
+.\.venv\Scripts\python.exe poc6_io\echo_fidelity.py
+```
+
+2 回（E1・E2）、それぞれ**新しいチャット**に貼り付けて送信し、回答の「コピー」を押す。結果: `out\poc6-echo-report.md`。終わったら連絡してほしい（Claude がこの PC で `poc6_io\dom_compare.py` を実行し、同じ会話の DOM と比べる。読むだけで送信しない）。
+
+### (c) 入力と出力の上限
+
+```powershell
+.\.venv\Scripts\python.exe poc6_io\limits.py
+```
+
+入力 4 回（8,000〜64,000 文字）と出力 3 回（300〜2,000 行。切れたら同じチャットで続きを 1 回）。待っている間のキー: `f` = 画面にエラーが出た・回答が止まった、`a` = 貼り付けたら添付に変わった、`s` = 飛ばす。結果: `out\poc6-limits-report.md`
+
+### (e) クリップボードの履歴への除外の印（Copilot を使わない）
+
+```powershell
+.\.venv\Scripts\python.exe poc6_io\clip_privacy.py
+```
+
+先に「設定 → システム → クリップボード → クリップボードの履歴」をオンにしておく。案内に従って Win+V の履歴を見て答える。結果: `out\poc6-clip-report.md`
+
+### (b) 入力欄の読み戻し（送信しない）
+
+```powershell
+.\.venv\Scripts\python.exe poc6_io\readback.py --url https://copilot.microsoft.com/ --variant msedge-headless
+```
+
+個人版は Claude が実行済み（段落ごとの読み方だけが一致）。組織版では `--url https://m365.cloud.microsoft/chat --variant msedge-headed` で実行する。

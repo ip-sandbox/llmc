@@ -139,7 +139,7 @@ input:
   blank_lines: filler                         # 確認済み。空行を代わりの行にして入れる（spec-file-protocol 9.6）。raw = そのまま
   max_chars: 8000                             # 仮。送信して測る（PoC-6）
   newline: paste                              # 改行の入れ方（paste / shift_enter）
-  readback: paragraphs                        # 仮。段落（<p>）ごとに textContent を読み、改行でつなぐ。PoC-6 で確かめる
+  readback: paragraphs                        # 確認済み（個人版、PoC-6）。段落（<p>）ごとに textContent を読み、改行でつなぐ
 
 completion:
   require_any: [stop_button_gone, message_done]
