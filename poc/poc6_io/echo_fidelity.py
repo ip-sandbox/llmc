@@ -5,6 +5,8 @@
 
     E1: 空白だけの行を含まない Markdown（代わりの行は空白 1 個になる）
     E2: 空白 1 個・2 個の行を含む YAML（代わりの行は空白 3 個になる）
+    E3: 特殊な文字（全角空白、ゼロ幅、EM SPACE など）と、U+00A0 の代わりの記号「⟦U+00A0⟧」が、そのまま返るか
+        （E1 で、U+00A0 は送信の時点で普通の空白に変わり、AI に届かないと分かったため）
 
 使い方: .\\.venv\\Scripts\\python.exe poc6_io\\echo_fidelity.py [--only E1]
   案内に従って、Copilot の【新しいチャット】に貼り付けて送信し、回答の下の「コピー」を押す。
@@ -33,9 +35,14 @@ E1 = ("# 架空の手引き\n\n説明の行。末尾に空白 2 個  \n\tタブ�
       f"NBSP を含む行:[{NB}]\n名前の例: pkg/__init__.py と __main__\n\n\n"
       "```python\ndef f():\n    return 1\n\n```\n\n````text\n入れ子の 4 個のフェンス\n````\n\n最後の行\n")
 E2 = "# 架空の設定\nserver:\n  workers: 4\n \n  timeout: 30\n  \n  retries: 3\n\nend: true\n"
+SPECIALS = {"U+3000 全角空白": "\u3000", "U+200B ゼロ幅空白": "\u200b", "U+FEFF": "\ufeff", "U+2003 EM SPACE": "\u2003",
+            "U+2028 行区切り": "\u2028", "U+00AD ソフトハイフン": "\u00ad", "U+FF5E 全角チルダ": "\uff5e", "U+301C 波ダッシュ": "\u301c"}
+E3 = ("# 架空の文字の確認\n" + "".join(f"{k}:[{v}]\n" for k, v in SPECIALS.items())
+      + "代わりの記号: [⟦U+00A0⟧] と [⟦U+00A0⟧⟦U+00A0⟧]\n最後の行\n")
 CASES = {
     "E1": {"path": "docs/sample.md", "text": E1},
     "E2": {"path": "config/sample.yaml", "text": E2},
+    "E3": {"path": "docs/chars.md", "text": E3},
 }
 ADD = "# 確認済み"
 TASK = (f"送ったファイルの最後に 1 行「{ADD}」を追加してください。それ以外は 1 文字も変えずに、ファイル全体を出力してください。"
@@ -52,7 +59,11 @@ def classify(want: list[str], got: list[str]) -> dict:
     w, g = kinds(want), kinds(got)
     diff = [d for d in difflib.unified_diff(want, got, lineterm="", n=0) if not d.startswith(("---", "+++"))]
     return {"一致": want == got, "行数（期待/回答）": f"{len(want)}/{len(got)}",
-            **{k: f"{w[k]}/{g[k]}" for k in w}, "差分（先頭 10 行）": [repr(x) for x in diff[:10]]}
+            **{k: f"{w[k]}/{g[k]}" for k in w},
+            "特殊な文字（期待/回答）": {k: f"{sum(x.count(v) for x in want)}/{sum(x.count(v) for x in got)}"
+                                    for k, v in {**SPECIALS, "U+00A0": NB, "⟦U+00A0⟧": "⟦U+00A0⟧"}.items()
+                                    if sum(x.count(v) for x in want)},
+            "差分（先頭 10 行）": [repr(x) for x in diff[:10]]}
 
 
 def html_facts(frag: str, tid: str) -> dict:
