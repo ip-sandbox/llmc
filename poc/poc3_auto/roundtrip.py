@@ -98,6 +98,25 @@ class Driver:
       return r;
     }"""
 
+    # 会話の一覧を最下部へスクロールする（spec-browser-driver 5.2）。画面に入っていない部分の操作欄（応答のコピー）は
+    # 遅れて描かれることがあった（PoC-7、組織版。後で履歴を見るとボタンが付いていた）
+    SCROLL_JS = r"""() => {
+      const qs = document.querySelectorAll('[data-testid=chatQuestion]');
+      const last = qs[qs.length - 1];
+      let moved = 0;
+      for (let e = last; e; e = e.parentElement) {
+        if (e.scrollHeight > e.clientHeight + 4 && /(auto|scroll)/.test(getComputedStyle(e).overflowY)) { e.scrollTop = e.scrollHeight; moved++; }
+      }
+      window.scrollTo(0, document.body.scrollHeight);
+      return moved;
+    }"""
+
+    def scroll_bottom(self) -> int:
+        try:
+            return self.page.evaluate(self.SCROLL_JS)
+        except Exception:  # noqa: BLE001
+            return -1
+
     def tail(self, tid: str, full: bool = False) -> dict:
         return self.page.evaluate(self.TAIL_JS, [tid, full])
 
@@ -111,6 +130,7 @@ class Driver:
         last_len, since = -1, time.time()
         while time.time() - t0 < timeout:
             try:
+                self.scroll_bottom()
                 if tid:
                     # 応答のコピーのボタンが出ないまま、停止ボタンが無く、回答の文字が stable_s 秒変わらなければ完了とみなす
                     # （組織版のループで、読み取り要求への返答の後の回答にコピーのボタンが出なかった。PoC-7）
@@ -119,6 +139,10 @@ class Driver:
                         last_len, since = t["text_len"], time.time()
                     elif (t["found"] and t["text_len"] > 0 and not t["stop"]
                           and time.time() - since >= (stable_s if t.get("has_done") else 3 * stable_s)):
+                        # ボタンが遅れて描かれることがあるので、最下部へスクロールして少し待ってから、もう一度だけ探す
+                        for _ in range(6):
+                            self.scroll_bottom()
+                            p.wait_for_timeout(500)
                         if p.evaluate(self.AFTER_JS, [COPY_BTN, tid])["n"] == 0:
                             return {"ok": True, "seconds": round(time.time() - t0, 1), "no_copy_button": True}
                     r = p.evaluate(self.AFTER_JS, [COPY_BTN, tid])
