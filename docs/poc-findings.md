@@ -196,3 +196,10 @@ Playwright の同期 API は、API を呼んでいる間しかブラウザから
 - **組織版では、自動操作した画面ありの Edge から送信できた**。個人版で起きた「セキュリティ チェック」による拒否は起きなかった
 - Edge のヘッドレスは、個人の PC では起動できたが、社内 PC では起動の時点で失敗した。原因は確認中（有力な候補: グループポリシー `HeadlessModeEnabled` によるヘッドレスモードの禁止。ほかに、プロファイルを開いたままの Edge、ウイルス対策ソフト）
 - ポリシーで禁止されている場合は、**回避せず**、画面ありの Edge を常駐させる方式を前提にする（spec-browser-driver、spec-daemon を見直す）
+
+### ヘッドレスの禁止（確定）と、最小化した画面ありの Edge
+
+- 利用者が `edge://policy` で確認: **`HeadlessModeEnabled = false`、ソースは「プラットフォーム」**（管理者が配布したポリシー）。Edge のヘッドレスが起動に失敗した原因はこれと判断する
+- 組織の方針なので**回避しない**（ポリシーのかからない同梱の Chromium でヘッドレスにする、ウィンドウを画面の外に置く、などはしない）。llmc は**画面ありの Edge を常駐させ、最小化して使う**ことを前提にする（plan.md、spec-browser-driver 3.2 を更新）
+- 最小化の確認（個人の PC、Edge・画面あり、送信なし）: DevTools プロトコルの `Browser.setWindowBounds` で最小化できた。最小化しても `document.visibilityState` は `visible` のまま、50 ミリ秒のタイマーも `requestAnimationFrame` も止まらなかった（Playwright の既定の起動オプションで、見えないウィンドウの間引きが無効になっているためと考えられる）
+- 未確認: 組織版で、最小化したまま回答の完了まで取れるか（`send_once.py --variant msedge-headed --minimize`）

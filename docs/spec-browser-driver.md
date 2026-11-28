@@ -86,8 +86,9 @@ site: copilot-m365
 display_name: Microsoft 365 Copilot Chat
 url: https://m365.cloud.microsoft/chat        # 仮。実際の URL を確認する
 browser:
-  channel: null            # null = 同梱の Chromium。"msedge" も可。既定値は SSO の調査の後に決める（10.4）
-  headless: true           # 同上
+  channel: msedge          # PoC の結果、組織では Edge（docs/poc-findings.md）
+  headless: false          # 組織の PC では Edge のヘッドレスがポリシーで禁止されている。回避しない
+  window: minimized        # 起動後に最小化する（DevTools プロトコルの Browser.setWindowBounds）。最小化しても処理は間引かれなかった
   locale: ja-JP
   viewport: {width: 1280, height: 900}
 
