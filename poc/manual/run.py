@@ -51,7 +51,7 @@ def ctx_block(path: str, text: str) -> str:
     return f'{f}\nLLMC-CTX path="{path}" sha={content_sha(text)} lines={lines}\n{text.rstrip(chr(10))}\nLLMC-CTX-END path="{path}"\n{f}'
 
 
-PASTE = "html"  # html: テキスト＋HTML（S0 で一字一句届いた） / space: 空行を空白 1 文字に / text: テキストのみ
+PASTE = "space"  # html: テキスト＋HTML（S0 で一字一句届いた） / space: 空行を空白 1 文字に / text: テキストのみ
 
 
 def to_clipboard_html(prompt: str) -> str:
@@ -151,11 +151,12 @@ def wait_response(tid: str, use_clip: bool, timeout: float = 1800) -> tuple[str,
 def parse_response(text, html, tid, sha, ctx_texts, allowed):
     """HTML（区分）があればそれで解析する。無ければフェンスの無いコピーのテキストとして解析する。"""
     ok = (lambda p: path_key(p) in allowed)
+    sr = PASTE == "space"
     if html:
         from htmlseg import segments
-        return parse(None, tid, rev=REV, ctx_sha=sha, allowed=ok, segments=segments(html), ctx_text=ctx_texts), "HTML の区分"
+        return parse(None, tid, rev=REV, ctx_sha=sha, allowed=ok, segments=segments(html), ctx_text=ctx_texts, space_restore=sr), "HTML の区分"
     plain = text.count("```") == 0 or "LLMC-PLAN" in text.split("```")[0]
-    return parse(text, tid, rev=REV, ctx_sha=sha, allowed=ok, plain_copy=plain, ctx_text=ctx_texts), \
+    return parse(text, tid, rev=REV, ctx_sha=sha, allowed=ok, plain_copy=plain, ctx_text=ctx_texts, space_restore=sr), \
         ("テキスト（フェンスなしのコピー）" if plain else "テキスト")
 
 
@@ -297,8 +298,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", choices=sorted(SCENARIOS))
     ap.add_argument("--no-clipboard", action="store_true")
-    ap.add_argument("--paste", choices=["html", "space", "text"], default="html",
-                    help="プロンプトの貼り付け方（既定 html。S0 の診断で一字一句届いた方式）")
+    ap.add_argument("--paste", choices=["html", "space", "text"], default="space",
+                    help="プロンプトの貼り付け方（既定 space: 空行を空白 1 文字の行にしてテキストで貼る。"
+                         "html はファイルの中身は崩れないが、AI がコードブロックを使わなくなった）")
     ap.add_argument("--replay", action="store_true", help="保存した回答（out\\manual\\*-response-*.txt）をもう一度解析して書き込む")
     a = ap.parse_args()
     if a.replay:

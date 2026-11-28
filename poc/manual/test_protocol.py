@@ -166,6 +166,23 @@ class TestCopilotCopy(unittest.TestCase):
         self.assertEqual(segs[2][1], "a\n\n  b <br>")
 
 
+class TestSpaceRestore(unittest.TestCase):
+    def body(self, content):
+        return "\n".join([f"{F4}", f'LLMC-PLAN id={T} write="a.txt"', F4, F4, f'LLMC-FILE id={T} path="a.txt" base=new',
+                          content, f'LLMC-END id={T} path="a.txt"', F4, f"{F4}\nLLMC-DONE v=1 id={T}\n{F4}"])
+
+    def test_restore(self):
+        r = parse(self.body("a\n \nb"), T, space_restore=True)
+        self.assertEqual(r.files[0].text, "a\n\nb")
+
+    def test_keep_when_original_has_space_lines(self):
+        r = parse(self.body("a\n \nb"), T, space_restore=True, ctx_text={"A.TXT": "a\n  \nb"})
+        self.assertEqual(r.files[0].text, "a\n \nb")
+
+    def test_off_by_default(self):
+        self.assertEqual(parse(self.body("a\n \nb"), T).files[0].text, "a\n \nb")
+
+
 class TestPath(unittest.TestCase):
     def test_bad(self):
         for p in ("src/../tests/x", "C:x", "/x", "a.py:ads", "tests./x", "con.txt", "CONOUT$", "TESTS~1/x", ""):

@@ -119,7 +119,7 @@ def segments_to_text(segs) -> str:
 
 def parse(text: str | None, tid: str, rev: str | None = None, ctx_sha: dict[str, str] | None = None,
           allowed=lambda p: True, segments=None, plain_copy: bool = False,
-          ctx_text: dict[str, str] | None = None) -> Result:
+          ctx_text: dict[str, str] | None = None, space_restore: bool = False) -> Result:
     """text: 生テキスト。segments: 区分の列（HTML から）。plain_copy: フェンスが取り除かれたコピーのテキスト。
     ctx_text: 送ったファイルの中身（<br> の復元の判定に使う）。"""
     r = Result()
@@ -244,6 +244,18 @@ def parse(text: str | None, tid: str, rev: str | None = None, ctx_sha: dict[str,
         if n:
             b.lines = ["" if l.strip() == "<br>" else l for l in b.lines]
             r.warnings.append(f"W_BR_RESTORED: {b.path} {n} 行")
+
+    # ---- 空白だけの行を空行に戻す（空行を空白 1 文字の行にして貼り付けた場合。S0 の方式 B）
+    if space_restore:
+        for b in r.files:
+            orig = (ctx_text or {}).get(path_key(b.path), "")
+            if any(x and not x.strip() for x in orig.split("\n")):
+                r.warnings.append(f"W_SPACE_LINE_KEPT: {b.path}（元のファイルに空白だけの行があるので戻さない）")
+                continue
+            n = sum(1 for x in b.lines if x and not x.strip())
+            if n:
+                b.lines = ["" if (x and not x.strip()) else x for x in b.lines]
+                r.warnings.append(f"W_SPACE_LINE_RESTORED: {b.path} {n} 行")
 
     # ---- 検査
     if r.done is not None:
