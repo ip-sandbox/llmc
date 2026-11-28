@@ -184,3 +184,15 @@ Playwright の同期 API は、API を呼んでいる間しかブラウザから
 - 設計への影響: 人が送信する方式では、**プロンプトをテキストと HTML の両方でクリップボードに入れ、ファイルの部分は `<pre>` にする**（`manual\run.py` の既定 `--paste html`）
 - B は、元のファイルにもともとある「空白だけの行」と区別できないので、HTML を使えない場合（ファイル経由）の代替にとどめる
 - 自動操作の方式（Lexical の入力欄に `fill`）でも、空行が `<br>` になって届く可能性がある（未確認。送信できなかったため）。自動操作の方式を使う場合も、同じ確認が必要
+
+## 組織の Microsoft 365 Copilot Chat（PoC-1b / PoC-2b、社内 PC、利用者が実行）
+
+| 試験 | 結果 |
+|---|---|
+| `check.py --only msedge-headless` | **NG**: `TargetClosedError: BrowserType.launch_persistent_context`（Edge のヘッドレスが起動の時点で失敗） |
+| `send_once.py`（Edge・ヘッドレス） | **NG**: 同じエラー |
+| `send_once.py --variant msedge-headed`（Edge・画面あり） | **OK**: ログイン、送信ボタン、**送信と回答の受け付けまで成功**（INFO=1、OK=3） |
+
+- **組織版では、自動操作した画面ありの Edge から送信できた**。個人版で起きた「セキュリティ チェック」による拒否は起きなかった
+- Edge のヘッドレスは、個人の PC では起動できたが、社内 PC では起動の時点で失敗した。原因は確認中（有力な候補: グループポリシー `HeadlessModeEnabled` によるヘッドレスモードの禁止。ほかに、プロファイルを開いたままの Edge、ウイルス対策ソフト）
+- ポリシーで禁止されている場合は、**回避せず**、画面ありの Edge を常駐させる方式を前提にする（spec-browser-driver、spec-daemon を見直す）
