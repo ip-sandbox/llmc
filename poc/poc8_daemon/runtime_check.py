@@ -236,6 +236,8 @@ def browser_procs(procs: dict, root: int, job) -> dict:
         d = names.setdefault(key, {"n": 0, "in_own_job": 0, "pids": []})
         d["n"] += 1
         d["pids"].append(pid)
+        if key == "other":
+            d.setdefault("names", []).append(n)  # ジョブに入らない子を見分けるため（プログラムの名前だけ）
         if job and in_job(pid, job):
             d["in_own_job"] += 1
     return names
