@@ -55,7 +55,8 @@ PASTE = "html"  # html: テキスト＋HTML（S0 で一字一句届いた） / s
 
 
 def to_clipboard_html(prompt: str) -> str:
-    """プロンプトを HTML の断片にする。```` で囲んだ部分は <pre>、それ以外は段落（S0 の方式 C）。"""
+    """プロンプトを HTML の断片にする。```` で囲んだ部分は（フェンスの行も含めて）<pre>、それ以外は段落（S0 の方式 C）。
+    フェンスの行を <pre> から外すと、AI がフェンスを目にせず、回答でコードブロックを使わなくなった（個人版 PoC）。"""
     import html as H
     import re as R
     out, buf, code, fence = [], [], None, None
@@ -66,11 +67,12 @@ def to_clipboard_html(prompt: str) -> str:
                 if buf:
                     out.append("<p>" + "<br>".join(H.escape(x) for x in buf) + "</p>")
                     buf = []
-                code, fence = [], m.group(1)
+                code, fence = [line], m.group(1)  # フェンスの行も <pre> に含め、AI に見えるようにする
             else:
                 buf.append(line)
         else:
             if line == fence:
+                code.append(line)
                 out.append("<pre><code>" + H.escape("\n".join(code)) + "</code></pre>")
                 code = None
             else:
