@@ -502,3 +502,9 @@ Playwright の同期 API は、API を呼んでいる間しかブラウザから
 - **venv の `pythonw.exe` は起動用のプログラムで、本当の Python はその子のプロセス**。起動用のプログラムはジョブの外に出たが、子の Python は「ジョブの中」と出た（起動用のプログラムが作るジョブ）。spec-daemon 2.1 に反映（その後、v1 はデーモンを作らないと決めたので、spec-runtime 付録 A に移した）
 - 組織版での確認は利用者が行う（poc\README の PoC-8）
 - **その後の決定（2026-11-28、利用者）**: ログインは 1 日 1 回の手動でよい（plan 前提 18）。v1 はデーモンを作らず、同時に動く llmc は 1 つだけ、入口は `llmc` の 1 つ（前提 19。spec-runtime）。RDP では使わない（前提 20）。そのため PoC-8 は、(a) ウィンドウを閉じた・元に戻したときの検知、(b) 画面のロックとスリープ、(d) 翌朝のログインの画面だけに絞った
+- Opus のサブエージェントのレビューを受けて、v1 の形に固有の仕組みを確かめる (c) を加えた（`poc8_daemonuntime_check.py`）。個人の PC で、送信なしで確かめたこと:
+  - pip と同じ形の起動用のプログラム（distlib の `ScriptMaker` で作った `llmc-poc8.exe`）から起動すると、起動用のプログラムはジョブの外、venv の `python.exe` と本当の Python はジョブの中（**起動用のプログラムが 2 段**）
+  - ファイルのロック（`msvcrt.locking`）で、2 つ目を断れた
+  - 本当の Python が自分用のジョブ（`KILL_ON_JOB_CLOSE`）を作って入れた。その後のドライバ（node 1）と Edge（7）はすべてそのジョブに入った
+  - `taskkill /F` で本当の Python を終わらせると、node と Edge は残らなかった。プロファイルの `exit_type` は `Crashed` になり、次の起動の前に `Normal` に直せた
+  - Playwright はドライバを、ウィンドウを隠すだけで同じコンソールのまま起動する（`_impl/transport.py`）。Ctrl+C がドライバにも届くので、待ちの間はコンソールの `ENABLE_PROCESSED_INPUT` を外す設計にした（spec-runtime 5 章）。Ctrl+C の実際の動きは、コンソールで利用者が確かめる

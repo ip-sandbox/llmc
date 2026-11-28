@@ -5,7 +5,7 @@
 ## 1. 方針
 
 1. **v1 はデーモンを作らない。1 つのプロセスが、ブラウザも、ファイルの読み書き・実行・ループも持つ**（plan 前提 19、spec-runtime）。プロセス間通信・キュー・常駐の仕組みが要らない
-2. **同時に動く llmc は 1 つだけ**。2 つ目は起動の直後に断る（名前付きのミューテックス）。そのため、要求の順番待ちが要らない。起動の入口は `llmc` の 1 つで、引数なしで対話のセッション（ブラウザを開いたまま）、サブコマンドで単発（コマンドの間だけブラウザを開く）
+2. **同時に動く llmc は 1 つだけ**。2 つ目は起動の直後に断る（`state\llmc.lock` のファイルのロック。ログオンのセッションによらず効く）。そのため、要求の順番待ちが要らない。起動の入口は `llmc` の 1 つで、引数なしで対話のセッション（ブラウザを開いたまま）、サブコマンドで単発（コマンドの間だけブラウザを開く）
 3. **画面操作は `ChatBackend` インタフェースの裏に隠す**。Playwright による実装は、サイト別プロファイル（YAML）を読む汎用のドライバとする。Copilot 固有の差は Copilot 用プロファイルに閉じ込める
 4. **書式の規則の原本は 1 つ**。プロンプト用の規則とエージェントの指示文は、そこから生成する
 5. **llmc の状態は作業リポジトリの外に置く**。`%LOCALAPPDATA%\llmc\` に集め、権限を本人だけに絞る
@@ -18,7 +18,7 @@ flowchart TB
   subgraph Proc["llmc のプロセス（llmc.exe コンソール。同時に 1 つだけ）"]
     CLI[入口<br/>llmc（セッション）/ ask / chat / loop / convert / undo / agent<br/>login / probe / doctor]
     TUI[TUI]
-    RT[実行の形<br/>ミューテックス・ジョブ・送信の数え上げ]
+    RT[実行の形<br/>ロック・ジョブ・取り消し・送信の数え上げ]
     PB[プロンプト組み立て<br/>予算・マスキング]
     FP[ファイル書式<br/>解析器・生成器]
     WG[ワークスペース保護<br/>パス判定・書き込み・スナップショット]
@@ -59,7 +59,7 @@ flowchart TB
 | ループエンジン | ラウンドの状態遷移、成功・終了条件、指標、履歴、最良状態 | spec-loop |
 | 変換エンジン | UC5 の方式の選択、出力の検証、レシピ | spec-convert |
 | 実行器 | ユーザー定義のコマンドの起動、タイムアウト、プロセスツリーの終了、出力の収集 | spec-loop、spec-security |
-| 実行の形 | 1 つだけ動かす仕組み（ミューテックス）、ブラウザを開く・閉じる時期、Edge のプロセスの後始末（ジョブ）、送信回数の上限（NFR-14）の確認 | spec-runtime |
+| 実行の形 | 1 つだけ動かす仕組み（ファイルのロック）、Ctrl+C での取り消し、ブラウザを開く・閉じる時期、Edge のプロセスの後始末（ジョブ）、送信回数の上限（NFR-14）の確認 | spec-runtime |
 | ChatBackend | 共通インタフェース（会話・送信・ストリーム・抽出・添付・ダウンロード） | spec-browser-driver |
 | Playwright ドライバ | サイト別プロファイルに従う画面操作 | spec-browser-driver |
 | 人が送信する方式 | クリップボード経由で、利用者が貼り付け・送信・コピーをする `ChatBackend`（自動操作の送信が拒否される個人の Copilot 用） | spec-browser-driver 13 章 |
@@ -69,7 +69,7 @@ flowchart TB
 
 | プロセス | 起動方法 | 寿命 | 備考 |
 |---|---|---|---|
-| llmc | 利用者・スクリプト・タスクスケジューラ | 単発のコマンドはその 1 回分。対話のセッション（`llmc` を引数なしで）は閉じるまで | venv の console script `llmc.exe`。**同時に 1 つだけ**（`Local\llmc-<SID>` のミューテックス。取れなければ `EXIT_BUSY`）。起動の直後に自分をジョブに入れ、落ちたときに Edge も終わるようにする（spec-runtime 3 章） |
+| llmc | 利用者・スクリプト・タスクスケジューラ | 単発のコマンドはその 1 回分。対話のセッション（`llmc` を引数なしで）は閉じるまで | venv の console script `llmc.exe`。**同時に 1 つだけ**（`state\llmc.lock` を `LockFileEx` でロック。取れなければ `EXIT_BUSY`）。起動用のプログラムが 2 段ある（`llmc.exe` → venv の `python.exe` → 本当の Python）。本当の Python が起動の直後に自分用のジョブを作って入り、落ちたときに Edge も終わるようにする（spec-runtime 3 章）。タスクスケジューラでは「ログオンしているときのみ実行する」にする |
 | ブラウザ（画面ありの Edge、最小化） | llmc が、送信が要るときにはじめて起動 | 単発のコマンドはその終わりまで。セッションでは閉じるまで | persistent context。プロファイルは `%LOCALAPPDATA%\llmc\profiles\<site>`。組織の PC ではヘッドレスがポリシーで禁止されている（回避しない）。人が送信する方式のサイトでは起動しない |
 | ユーザー定義のコマンド | 実行器が起動 | タイムアウトまで | Job Object に入れ、終了時にプロセスツリーごと終了する |
 | 手元変換のスクリプト（UC5 方式 C） | 実行器が起動 | タイムアウトまで | 確認または事前承認が必須 |
@@ -94,12 +94,12 @@ v2 でデーモンを足す場合の案（名前付きパイプ、DACL、所有�
 ```mermaid
 sequenceDiagram
   participant U as シェル
-  participant C as クライアント
+  participant C as llmc（ask）
   participant D as ドライバ（同じプロセス）
   participant B as ブラウザ
   U->>C: git diff | llmc ask "レビューして" --json
   C->>C: 実行 ID の発行・stdin 読み込み・マスキング・予算確認
-  C->>D: turn(新規会話, 本文)
+  C->>D: send(新規会話, 本文)
   D-->>C: sending
   D->>B: 入力・送信・確認
   B-->>D: 回答の DOM 変化
@@ -113,14 +113,14 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-  participant C as クライアント（ループエンジン）
+  participant C as ループエンジン
   participant W as ワークスペース保護
   participant D as ドライバ（同じプロセス）
   participant X as 実行器
   C->>C: ループ定義の検証・run ディレクトリ作成
   loop ラウンド
     C->>C: プロンプト組み立て（履歴の要約・差分のみの文脈・マスキング）
-    C->>D: turn
+    C->>D: send
     D-->>C: 回答の生テキスト
     C->>C: 解析（完全性・ID・バージョン）
     alt 切れている

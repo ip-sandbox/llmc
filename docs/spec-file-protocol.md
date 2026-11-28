@@ -121,7 +121,7 @@ LLMC-CTX-END path="config/app.yaml"
 | `sha` | 内容ハッシュ。AI が書き換えるときに `base` として書き返す |
 | `lines` | 行数（llmc が数えるので正確） |
 | `masked` | マスキングで置換した箇所の数（spec-security） |
-| `range` | 一部だけ送る場合の範囲（`head=50`、`lines=100-180` など）。一部だけ送ったファイルは書き換えを許さない（`E_PARTIAL_BASE`） |
+| `range` | 一部だけ送る場合の範囲（`head=50`、`lines=100-180`、先頭と末尾の組 `head=30+tail=5` など）。一部だけ送ったファイルは書き換えを許さない（`E_PARTIAL_BASE`）。`+` で組にしたときは、中身の間に llmc が `LLMC-CTX-GAP lines=<省いた行数>` の 1 行を入れる |
 | `state` | 同じチャットを続ける場合の、前回からの変化（`new`、`changed`、`unchanged`）。`unchanged` の場合は中身を省略し、この行と `sha` だけを送る |
 
 - フェンスの長さは llmc が計算する（中身の中で最も長いバッククォートの連続 + 1、最小 4）。言語名は付けない（AI が書き写すため。4.3）

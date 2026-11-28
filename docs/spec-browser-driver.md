@@ -36,7 +36,7 @@
 | データ | 主な項目 |
 |---|---|
 | `ConversationRef` | `url`（続行に使う）、`title`、`site`、`agent`、`created_at` |
-| `OutboundMessage` | `text`、`attachments`（**クライアントが用意したマスキング済みの一時ファイル**のパスの列。その実行の run ディレクトリに置いたものだけを読む）、`turn_id`（ファイル書式のターン ID）、`expect_protocol`（書式の回答を期待するか）、`blank_line_filler`（空行の代わりの行。spec-file-protocol 9.6。`null` なら空行をそのまま送る） |
+| `OutboundMessage` | `text`、`attachments`（**上の層（変換エンジンなど）が用意したマスキング済みの一時ファイル**のパスの列。その実行の run ディレクトリに置いたものだけを読む）、`turn_id`（ファイル書式のターン ID）、`expect_protocol`（書式の回答を期待するか）、`blank_line_filler`（空行の代わりの行。spec-file-protocol 9.6。`null` なら空行をそのまま送る） |
 | `TurnResult` | `raw_text`、`segments`（区分の列。コピーの HTML・DOM のどちらから作った場合も持つ）、`extract_method`（`copy_html`・`copy_text`・`dom`・`manual_clipboard` のどれか）、`blank_line_filler`（送ったときの値をそのまま返す）、`completion_signals`（どの条件で完了とみなしたか）、`artifacts`（ダウンロードできるファイルの一覧）、`conversation`（送信後の URL）、`timings`、`warnings`。HTML の原文は持たない（診断のフラグがあるときだけ、本人だけが読める記録に残す。spec-security） |
 | `Capabilities` | `max_input_chars`、`attachments`（対応・最大サイズ・最大個数・拡張子）、`downloads`、`agents`、`list_conversations`、`streaming` |
 | イベント | 2.3 を参照 |
@@ -95,6 +95,8 @@ browser:
   channel: msedge          # PoC の結果、組織では Edge（docs/poc-findings.md）
   headless: false          # 組織の PC では Edge のヘッドレスがポリシーで禁止されている。回避しない
   window: minimized        # 起動後に最小化する（DevTools プロトコルの Browser.setWindowBounds）。最小化しても処理は間引かれなかった
+  handle_signals: false    # launch_persistent_context の handle_sigint・handle_sigterm・handle_sighup を False にする（Ctrl+C でブラウザを閉じさせない。spec-runtime 5 章）。変えられない
+  crash_restore: suppress  # 前回が強制終了でも「ページを復元」の表示を出させない（起動の前に Preferences の exit_type を直す、または起動の引数。効く方法は PoC-8 の (c)。spec-runtime 2.3）
   locale: ja-JP
   viewport: {width: 1280, height: 900}
 
