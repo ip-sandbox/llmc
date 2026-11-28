@@ -8,9 +8,12 @@
     E3: 特殊な文字（全角空白、ゼロ幅、EM SPACE など）と、U+00A0 の代わりの記号「⟦U+00A0⟧」が、そのまま返るか
         （E1 で、U+00A0 は送信の時点で普通の空白に変わり、AI に届かないと分かったため）
 
-使い方: .\\.venv\\Scripts\\python.exe poc6_io\\echo_fidelity.py [--only E1]
-  案内に従って、Copilot の【新しいチャット】に貼り付けて送信し、回答の下の「コピー」を押す。
-結果: out\\poc6-echo-report.md（回答の生データは out\\poc6\\）
+使い方:
+  個人版（人が送信する）: .\\.venv\\Scripts\\python.exe poc6_io\\echo_fidelity.py [--only E1]
+    案内に従って、Copilot の【新しいチャット】に貼り付けて送信し、回答の下の「コピー」を押す。
+  組織版（自動）: .\\.venv\\Scripts\\python.exe poc6_io\\echo_fidelity.py --auto --url https://m365.cloud.microsoft/chat
+    最小化した Edge で自動で送信し、同じ画面の DOM の <pre> とも比べる。
+結果: out\\poc6-echo-report.md（自動は poc6-echo-auto-report.md。回答の生データは out\\poc6\\）
 """
 from __future__ import annotations
 
@@ -24,7 +27,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from common6 import OUT, apply_filler, choose_filler, clear_if_ours, parse_cf_html, restore_filler, set_text_private, short_tid, wait_answer  # noqa: E402
+from common6 import OUT, add_sender_args, apply_filler, choose_filler, make_sender, parse_cf_html, restore_filler  # noqa: E402
 import run as M  # noqa: E402
 from common.report import Report  # noqa: E402
 from htmlseg import segments  # noqa: E402
@@ -80,8 +83,21 @@ def html_facts(frag: str, tid: str) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", choices=sorted(CASES))
+    add_sender_args(ap)
     a = ap.parse_args()
-    rep = Report("poc6-echo", "PoC-6 (a)(d): 空行の代わりの行と、コピーの HTML の忠実さ")
+    if a.auto and not a.url:
+        ap.error("--auto には --url が必要")
+    pre = "auto-" if a.auto else ""
+    rep = Report("poc6-echo-auto" if a.auto else "poc6-echo",
+                 "PoC-6 (a)(d): 空行の代わりの行と、コピーの HTML の忠実さ" + ("（自動）" if a.auto else ""))
+    sender = make_sender(a)
+    try:
+        return _run(a, rep, sender, pre)
+    finally:
+        sender.close()
+
+
+def _run(a, rep, sender, pre) -> int:
     rep.add("条件", "規則の版", "INFO", M.REV)
     record = {}
     for name, c in CASES.items():
@@ -97,27 +113,32 @@ def main() -> int:
         prompt, sha, texts = M.build_prompt(tid, sc, ws, long_rules=True)
         filler = choose_filler(texts.values())
         sent = apply_filler(prompt, filler)
-        seq = set_text_private(sent)
         sec = f"{name}: {c['path']}"
-        print("\n" + "=" * 60, file=sys.stderr)
-        print(f"[{name}] ID {short_tid(tid)}、{len(sent)} 文字、代わりの行は空白 {len(filler)} 個", file=sys.stderr)
-        print("  Copilot で【新しいチャット】を開き、貼り付けて（Ctrl+V）送信し、回答の下の「コピー」を押してください。", file=sys.stderr)
-        got = wait_answer(tid, sent)
-        clear_if_ours(seq)
-        if "timeout" in got:
-            rep.add(sec, "回答", "NG", "時間切れ")
+        got = sender.ask(tid, sent, True, f"{name}、代わりの行は空白 {len(filler)} 個")
+        if "timeout" in got or "error" in got:
+            rep.add(sec, "回答", "NG", got.get("error", "時間切れ"))
+            rep.write()
             continue
-        (OUT / f"{name}-prompt.txt").write_bytes(prompt.encode("utf-8"))
-        (OUT / f"{name}-response.txt").write_bytes((got["text"] or "").encode("utf-8"))
-        (OUT / f"{name}-response.html").write_bytes(got["html"])
+        (OUT / f"{pre}{name}-prompt.txt").write_bytes(prompt.encode("utf-8"))
+        (OUT / f"{pre}{name}-response.txt").write_bytes((got["text"] or "").encode("utf-8"))
+        (OUT / f"{pre}{name}-response.html").write_bytes(got["html"])
         cf = parse_cf_html(got["html"])
-        rep.add(sec, "コピーの HTML", "OK" if cf["strict_utf8"] and cf["by_offset"] else "WARN",
+        rep.add(sec, "コピーの HTML", "OK" if cf["strict_utf8"] and cf["by_offset"] is not False else "WARN",
                 {"送り元のホスト": cf["source_url_host"], "ヘッダの位置で切り出せた": cf["by_offset"], "厳密な UTF-8": cf["strict_utf8"],
                  **html_facts(cf["fragment"], tid)})
         res = parse(None, tid, rev=M.REV, ctx_sha=sha, allowed=lambda p: path_key(p) == path_key(c["path"]),
                     segments=segments(cf["fragment"]), ctx_text=texts, space_restore=False)
         rep.add(sec, "解析", "OK" if res.kind == "complete" else "NG", res.summary())
+        pres = sender.dom_pres(tid)
+        if pres is not None:  # 自動の方式: 同じ画面の DOM の <pre> と、コピーの HTML の code 区分を比べる
+            from readback import compare
+            codes = [t for k, t in segments(cf["fragment"]) if k == "code" and "LLMC-FILE" in t]
+            dom = next((p for p in pres if "LLMC-FILE" in p["textContent"]), None)
+            for how in ("textContent", "innerText"):
+                cmp = compare(codes[0], dom[how].rstrip("\n")) if codes and dom else {"一致": False, "理由": "片方に無い"}
+                rep.add(sec, f"DOM の {how} とコピーの HTML", "OK" if cmp["一致"] else "NG", cmp)
         if res.kind != "complete" or not res.files:
+            rep.write()
             continue
         raw_lines = res.files[0].lines
         restored = restore_filler(raw_lines, filler)
@@ -133,7 +154,7 @@ def main() -> int:
             rep.add(sec, "参考: U+00A0 を空白とみなした比較", "OK" if r2["一致"] else "NG", r2)
         record[name] = {"tid": tid, "path": c["path"]}
         rep.write()
-    (OUT / "echo-record.json").write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+    (OUT / f"{pre}echo-record.json").write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
     print(f"\nレポート: {rep.write()}", file=sys.stderr)
     return 0
 

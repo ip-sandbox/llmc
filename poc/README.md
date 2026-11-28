@@ -197,3 +197,19 @@ $env:POC_URL = "https://m365.cloud.microsoft/chat"
 ```
 
 個人版は Claude が実行済み（段落ごとの読み方だけが一致）。組織版では `--url https://m365.cloud.microsoft/chat --variant msedge-headed` で実行する。
+
+### 組織版で PoC-6 を確かめる（自動の方式。貼り付けの手間なし）
+
+社内 PC で `git pull` してから、次を順に実行する。どれも最小化した Edge で自動で動く（終わるまで触らない）。
+
+```powershell
+$env:POC_URL = "https://m365.cloud.microsoft/chat"
+# (b) 入力欄の読み戻し（送信しない）
+.\.venv\Scripts\python.exe poc6_ioeadback.py --url $env:POC_URL --variant msedge-headed
+# (a)(d) 空行の代わりの行・特殊な文字・コピーの HTML と DOM の比較（3 回送信）
+.\.venv\Scripts\python.exe poc6_io\echo_fidelity.py --auto --url $env:POC_URL
+# (c) 入力と出力の上限（入力 4 回、出力 3 回＋切れたら続き 1 回）
+.\.venv\Scripts\python.exe poc6_io\limits.py --auto --url $env:POC_URL
+```
+
+結果: `out\poc6-readback-report.md`、`out\poc6-echo-auto-report.md`、`out\poc6-limits-auto-report.md`。会話の本文は含まない（架空の内容の比較の結果だけ）。全行を詳細も含めて貼ってほしい。利用の上限が心配なら、`limits.py` に `--lines 300,600` を付けて出力の回数を減らせる。

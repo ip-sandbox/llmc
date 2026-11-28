@@ -131,6 +131,8 @@ def parse_cf_html(raw: bytes) -> dict:
         raw.decode("utf-8")
     except UnicodeDecodeError:
         res["strict_utf8"] = False
+    if "StartFragment" not in head:  # 自動の方式で横取りした HTML（CF_HTML のヘッダが無い）
+        res["by_offset"] = None
     try:
         sf, ef = int(head["StartFragment"]), int(head["EndFragment"])
         res["fragment"] = raw[sf:ef].decode("utf-8")
@@ -192,3 +194,91 @@ def wait_answer(tid: str, sent: str, timeout: float = 1800, want=("LLMC-DONE", "
 
 def short_tid(tid: str) -> str:
     return tid[:2] + "****"
+
+
+# ---------------------------------------------------------------- 送り方（人が送信する / 自動）
+
+PRE_JS = r"""(tid) => Array.from(document.querySelectorAll('main pre')).filter(p => p.textContent.includes('id=' + tid))
+  .map(p => ({textContent: p.textContent, innerText: p.innerText,
+              tags: Array.from(new Set(Array.from(p.querySelectorAll('*')).map(e => e.tagName.toLowerCase()))).sort()}))"""
+
+
+class ManualSender:
+    """人が送信する方式（個人版）。プロンプトをクリップボードに入れ、回答のコピーを待つ。"""
+    auto = False
+
+    def ask(self, tid: str, text: str, new_chat: bool, label: str, keys: str = "", want=("LLMC-DONE", "LLMC-PLAN")) -> dict:
+        seq = set_text_private(text)
+        where = "【新しいチャット】" if new_chat else "【同じチャット】"
+        print("\n" + "=" * 60, file=sys.stderr)
+        print(f"[{label}] ID {short_tid(tid)}、{len(text):,} 文字。Copilot の{where}に貼り付けて（Ctrl+V）送信し、回答の下の「コピー」を押してください。",
+              file=sys.stderr)
+        if keys:
+            print("  エラーで送れない・回答が止まったときは f、添付に変わったら a、飛ばすなら s を押してください。", file=sys.stderr)
+        got = wait_answer(tid, text, want=want, keys=keys)
+        clear_if_ours(seq)
+        return got
+
+    def dom_pres(self, tid: str):
+        return None
+
+    def close(self):
+        pass
+
+
+class AutoSender:
+    """自動の方式（組織版、最小化した画面ありの Edge）。貼り付けイベントで入れて送信し、「応答のコピー」を横取りする。"""
+    auto = True
+
+    def __init__(self, url: str, variant: str = "msedge-headed", minimize: bool = True, timeout: float = 600):
+        import os
+        sys.path.insert(0, str(ROOT / "poc2_page"))
+        sys.path.insert(0, str(ROOT / "poc3_auto"))
+        os.environ["POC_URL"] = url
+        from playwright.sync_api import sync_playwright
+
+        from cp import CLIP_HOOK, open_copilot
+        from roundtrip import Driver
+        self.timeout = timeout
+        self.pw = sync_playwright().start()
+        self.ctx, self.page, self.info = open_copilot(self.pw, variant=variant, init_script=CLIP_HOOK)
+        if not self.info["ready"]:
+            raise RuntimeError(f"画面の準備ができない: {self.info}")
+        if minimize and variant.endswith("headed"):
+            cdp = self.ctx.new_cdp_session(self.page)
+            wid = cdp.send("Browser.getWindowForTarget")["windowId"]
+            cdp.send("Browser.setWindowBounds", {"windowId": wid, "bounds": {"windowState": "minimized"}})
+        self.drv = Driver(self.page, self.ctx, url)
+
+    def ask(self, tid: str, text: str, new_chat: bool, label: str, keys: str = "", want=None) -> dict:
+        print(f"[{label}] ID {short_tid(tid)}、{len(text):,} 文字を自動で送信します", file=sys.stderr)
+        if new_chat:
+            self.drv.new_chat()
+        self.drv.put(text, "paste_text")  # 空行の代わりの行は、呼び出し元で入れてある
+        t0 = time.time()
+        w = self.drv.send_and_wait(timeout=self.timeout)
+        if not w["ok"]:
+            return {"error": w.get("error")}
+        t, h = self.drv.copy_last()
+        if not h:
+            return {"error": "コピーの HTML を横取りできなかった"}
+        return {"text": t or "", "html": h.encode("utf-8"), "seconds": round(time.time() - t0, 1)}
+
+    def dom_pres(self, tid: str):
+        return self.page.evaluate(PRE_JS, tid)
+
+    def close(self):
+        try:
+            self.ctx.close()
+        finally:
+            self.pw.stop()
+
+
+def make_sender(args):
+    return AutoSender(args.url, args.variant) if args.auto else ManualSender()
+
+
+def add_sender_args(ap):
+    ap.add_argument("--auto", action="store_true", help="自動の方式（組織版）。--url が必要")
+    ap.add_argument("--url", help="自動の方式で開く URL（例: https://m365.cloud.microsoft/chat）")
+    ap.add_argument("--variant", default="msedge-headed")
