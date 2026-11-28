@@ -214,7 +214,9 @@ def main() -> int:
         if method and not a.only_s0:
             run_scenarios(drv, rep, method)
         ctx.close()
-    print(f"\nレポート: {rep.write()}\n内容を確認してから、チャットに貼ってください。", file=sys.stderr)
+    print(f"\nレポート: {rep.write()}", file=sys.stderr)
+    from common.digest import show
+    show([rep.name])
     return 0
 
 

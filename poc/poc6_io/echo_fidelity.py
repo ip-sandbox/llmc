@@ -156,6 +156,8 @@ def _run(a, rep, sender, pre) -> int:
         rep.write()
     (OUT / f"{pre}echo-record.json").write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
     print(f"\nレポート: {rep.write()}", file=sys.stderr)
+    from common.digest import show
+    show([rep.name])
     return 0
 
 

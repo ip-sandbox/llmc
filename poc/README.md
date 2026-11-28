@@ -212,4 +212,18 @@ $env:POC_URL = "https://m365.cloud.microsoft/chat"
 .\.venv\Scripts\python.exe poc6_io\limits.py --auto --url $env:POC_URL
 ```
 
-結果: `out\poc6-readback-report.md`、`out\poc6-echo-auto-report.md`、`out\poc6-limits-auto-report.md`。会話の本文は含まない（架空の内容の比較の結果だけ）。全行を詳細も含めて貼ってほしい。利用の上限が心配なら、`limits.py` に `--lines 300,600` を付けて出力の回数を減らせる。
+結果: `out\poc6-readback-report.md`、`out\poc6-echo-auto-report.md`、`out\poc6-limits-auto-report.md`。会話の本文は含まない（架空の内容の比較の結果だけ）。**貼るのは、各プログラムの最後に出る「貼り付け用の要約」だけでよい**（下の「結果の貼り方」）。利用の上限が心配なら、`limits.py` に `--lines 300,600` を付けて出力の回数を減らせる。
+
+## 結果の貼り方（要約）
+
+レポートの全文は長いので、チャットには**要約**を貼る。各プログラムは、終わったときに要約を表示し、クリップボードにも入れる（Win+V の履歴とクラウドへの同期からは除外）。表示を確認してから、そのまま Ctrl+V で貼る。
+
+- 要約の中身: レポートごとの件数と指紋（`fp=`。全文と突き合わせるため）、NG と WARN の項目（エラー・警告のコード、数値、差分の先頭）、余裕があれば INFO、OK は節ごとの数だけ。既定で 1,800 文字以内
+- 複数のプログラムを続けて実行したときは、最後にまとめて作り直せる
+
+```powershell
+.\.venv\Scripts\python.exe common\digest.py                     # 直近 3 時間のレポート全部
+.\.venv\Scripts\python.exe common\digest.py poc6-echo-auto poc6-limits-auto --limit 1200
+```
+
+- Claude が要約から詳しく知りたい項目を挙げたら、その項目だけを貼る（`out\<名前>-report.md` の該当する行）

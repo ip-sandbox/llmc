@@ -135,6 +135,8 @@ def main() -> int:
     finally:
         sender.close()
     print(f"\nレポート: {rep.write()}", file=sys.stderr)
+    from common.digest import show
+    show([rep.name])
     return 0
 
 

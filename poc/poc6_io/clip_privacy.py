@@ -48,6 +48,8 @@ def main() -> int:
     rep.add("貼り付け", "除外の印があっても、ふつうに貼り付けられる", "OK" if paste == "y" else "NG", {"回答": paste})
     rep.add("後始末", "自分の書き込みのままなら空にする", "INFO", {"空にした": clear_if_ours(seq)})
     print(f"\nレポート: {rep.write()}\n（Win+V の履歴に残った A は、不要なら履歴から削除してください）", file=sys.stderr)
+    from common.digest import show
+    show([rep.name], clip=False)  # このプログラムはクリップボードの試験なので、要約は入れない
     return 0
 
 

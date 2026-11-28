@@ -87,7 +87,11 @@ def main() -> int:
                                                      "送る行数": t.count("\n") + 1})
                 for how in ("textContent", "innerText", "paragraphs"):
                     c = compare(t, r[how])
-                    rep.add(label, how, "OK" if c["一致"] else "NG", c)
+                    # 採用する読み方（paragraphs）だけを合否にする。ほかは参考（個人版で合わないと分かっている）
+                    if how == "paragraphs":
+                        rep.add(label, how, "OK" if c["一致"] else "NG", c)
+                    else:
+                        rep.add(label, how, "INFO", {"一致": c["一致"], "行数": c.get("行数（送る/読み戻し）")})
             except Exception as e:  # noqa: BLE001
                 rep.add(label, "実行", "NG", first_line(e))
             finally:
@@ -97,6 +101,8 @@ def main() -> int:
             rep.write()
         ctx.close()
     print(f"\nレポート: {rep.write()}", file=sys.stderr)
+    from common.digest import show
+    show([rep.name])
     return 0
 
 
