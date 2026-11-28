@@ -233,3 +233,27 @@ $env:POC_URL = "https://m365.cloud.microsoft/chat"
 ```
 
 - Claude が要約から詳しく知りたい項目を挙げたら、その項目だけを貼る（`out\<名前>-report.md` の該当する行）
+
+## PoC-7: ループの模擬（plan 5.6 の 3）
+
+どちらも、個人版は人が送信する方式、組織版は自動の方式（`--auto --url $env:POC_URL`）で動く。終わると貼り付け用の要約を出す（社内 PC からは `common\digest.py --short`）。
+
+### (0) 出力の上限を超えるファイルの書き換え（分割の出力 A と範囲の置き換え B）
+
+```powershell
+.\.venv\Scripts\python.exe poc7_loop\split_test.py              # 個人版。A は 3〜5 ターン（同じチャット）、B は 1 ターン（新しいチャット）
+.\.venv\Scripts\python.exe poc7_loop\split_test.py --auto --url $env:POC_URL   # 組織版
+```
+
+架空の設定ファイル（約 15,000 文字、330 行）の 3 か所の値を変える。結果: `out\poc7-split-report.md`
+
+### (a)〜(e) 同じチャットで 10 ラウンド
+
+```powershell
+.\.venv\Scripts\python.exe poc7_loop\loop_sim.py                # 個人版。10〜15 ターン（1 ラウンド目だけ新しいチャット、あとは同じチャット）
+.\.venv\Scripts\python.exe poc7_loop\loop_sim.py --auto --url $env:POC_URL     # 組織版。5 ラウンド目の後に会話の URL を開き直す
+```
+
+架空のベンチマーク（llmc が用意する `bench.py`。AI が書くのは設定の YAML だけで、AI のコードは実行しない）のスループットを上げる調整を 10 回依頼する。結果: `out\poc7-loop-report.md`
+
+- 個人版の 1 日の上限に注意。足りなければ `--rounds 5` で減らせる

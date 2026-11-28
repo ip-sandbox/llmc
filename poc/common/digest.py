@@ -187,7 +187,8 @@ def show(names: list[str], limit: int = 1800, clip: bool = True) -> None:
     """各 PoC の終わりに呼ぶ。要約を表示してクリップボードに入れる。"""
     text = digest(names, limit)
     print("\n----- 貼り付け用の要約（ここから） -----\n" + text + "\n----- （ここまで） -----", file=sys.stderr)
-    if clip and to_clipboard(text):
+    import os
+    if clip and not os.environ.get("LLMC_POC_NO_CLIP") and to_clipboard(text):
         print("要約をクリップボードに入れました。内容を確認してから、チャットに Ctrl+V で貼ってください。", file=sys.stderr)
 
 
