@@ -19,7 +19,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from common6 import OUT, add_sender_args, apply_filler, choose_filler, make_sender, parse_cf_html  # noqa: E402
+from common6 import OUT, add_sender_args, apply_filler, choose_filler, make_sender, parse_cf_html, response_hints  # noqa: E402
 import run as M  # noqa: E402
 from common.report import Report  # noqa: E402
 from htmlseg import segments  # noqa: E402
@@ -99,6 +99,9 @@ def run_output(rep: Report, sender, counts, pre: str) -> None:
         detail = {"分類": res.kind, "完成したブロック": [b.complete for b in res.files], "行数": len(lines),
                   "先頭から正しく続いた行": ok_lines, "... だけの行": len(elided), "回答の文字数": len(got["text"] or ""),
                   "回答まで秒": got["seconds"], "警告": [w for w in res.warnings if w.startswith("W_SUSPECT_ELISION")], "エラー": res.errors}
+        if res.kind != "complete" or elided:
+            detail.update(response_hints(got["text"], got["html"]))
+            detail.update(sender.response_facts())
         rep.add(sec, item, "OK" if res.kind == "complete" and ok_lines == n and not elided else "NG", detail)
         rep.write()
         if res.kind == "truncated":
@@ -111,8 +114,11 @@ def run_output(rep: Report, sender, counts, pre: str) -> None:
                 continue
             res2 = parse(None, tid2, rev=M.REV, allowed=lambda p: True, segments=segments(parse_cf_html(got2["html"])["fragment"]))
             l2 = res2.files[0].lines if res2.files else []
-            rep.add(sec, item + " の続き", "OK" if res2.kind == "complete" else "NG",
-                    {"分類": res2.kind, "行数": len(l2), "回答の文字数": len(got2["text"] or "")})
+            d2 = {"分類": res2.kind, "行数": len(l2), "回答の文字数": len(got2["text"] or "")}
+            if res2.kind != "complete":
+                d2.update(response_hints(got2["text"], got2["html"]))
+                d2.update(sender.response_facts())
+            rep.add(sec, item + " の続き", "OK" if res2.kind == "complete" else "NG", d2)
             rep.write()
 
 

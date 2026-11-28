@@ -192,6 +192,26 @@ def wait_answer(tid: str, sent: str, timeout: float = 1800, want=("LLMC-DONE", "
     return {"timeout": True}
 
 
+HINTS = {  # 書式どおりでない回答の中身を、英数字のコードで示す（--short の要約でも読めるように）
+    "DL": r"ダウンロード|download|ファイルを(作成|生成|用意)|\.txt\b|添付",
+    "LIMIT": r"上限|長すぎ|長い|制限|too long|limit",
+    "REFUSE": r"申し訳|できません|お応えできません|cannot|can't|unable",
+    "SPLIT": r"分割|複数回|続き|分けて",
+    "CODE": r"Python|コードを実行|スクリプト|code interpreter",
+    "ASK": r"[?？]\s*$|よろしいですか|しますか",
+}
+
+
+def response_hints(text: str, html_raw: bytes | None) -> dict:
+    """回答が書式どおりでないときに、何が起きたかの手がかりを返す。"""
+    t = text or ""
+    frag = parse_cf_html(html_raw)["fragment"] if html_raw else ""
+    found = [k for k, pat in HINTS.items() if re.search(pat, t, re.I | re.M)]
+    return {"hint": "+".join(found) or "none", "links": len(re.findall(r"<a\s", frag)), "pres": len(re.findall(r"<pre", frag)),
+            "imgs": len(re.findall(r"<img", frag)), "buttons": len(re.findall(r"<button", frag)),
+            "llmc_lines": sum(1 for x in t.split("\n") if x.strip().startswith("LLMC-"))}
+
+
 def short_tid(tid: str) -> str:
     return tid[:2] + "****"
 
@@ -201,6 +221,22 @@ def short_tid(tid: str) -> str:
 PRE_JS = r"""(tid) => Array.from(document.querySelectorAll('main pre')).filter(p => p.textContent.includes('id=' + tid))
   .map(p => ({textContent: p.textContent, innerText: p.innerText,
               tags: Array.from(new Set(Array.from(p.querySelectorAll('*')).map(e => e.tagName.toLowerCase()))).sort()}))"""
+
+
+FACTS_JS = r"""() => {
+  const qs = Array.from(document.querySelectorAll('[data-testid=chatQuestion]'));
+  const q = qs[qs.length - 1];
+  const after = el => !q || (q.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+  const main = document.querySelector('main') || document.body;
+  const links = Array.from(main.querySelectorAll('a[href]')).filter(after);
+  const kind = h => /sharepoint|onedrive|1drv/i.test(h) ? 'sp' : /blob:|download/i.test(h) ? 'dl' : 'other';
+  const kinds = {};
+  links.forEach(a => { const k = kind(a.href); kinds[k] = (kinds[k] || 0) + 1; });
+  const btn = Array.from(main.querySelectorAll('button')).filter(after)
+    .map(b => (b.getAttribute('aria-label') || b.textContent || '')).filter(t => /ダウンロード|Download|開く|Open|保存|Save/i.test(t));
+  const files = Array.from(main.querySelectorAll('[data-testid*=file i], [class*=file i], [class*=attachment i]')).filter(after).length;
+  return {dom_links: kinds, dom_dl_buttons: btn.length, dom_file_like: files};
+}"""
 
 
 class ManualSender:
@@ -221,6 +257,9 @@ class ManualSender:
 
     def dom_pres(self, tid: str):
         return None
+
+    def response_facts(self) -> dict:
+        return {}
 
     def close(self):
         pass
@@ -266,6 +305,14 @@ class AutoSender:
 
     def dom_pres(self, tid: str):
         return self.page.evaluate(PRE_JS, tid)
+
+    def response_facts(self) -> dict:
+        """最後の利用者のメッセージより後ろ（= 最後の回答）にある、リンク・ボタン・ファイルらしい要素を数える。
+        リンク先のホスト名は記録しない（社内のテナント名を含み得るため）。種類だけを数える。"""
+        try:
+            return self.page.evaluate(FACTS_JS)
+        except Exception as e:  # noqa: BLE001
+            return {"facts_error": str(e)[:60]}
 
     def close(self):
         try:
