@@ -140,3 +140,16 @@ py -m venv .venv            # py が無ければ python -m venv .venv
 3 回（A テキスト / B 空行を空白 1 文字に / C テキスト＋HTML）、それぞれ**新しいチャット**に貼り付けて送信し、回答の「コピー」を押す。貼り付けた直後の入力欄の見た目（空行が残っているか、コードの枠になったか）も教えてほしい。結果: `out\manual-probe-input-report.md`
 
 保存した回答の再解析（Copilot には接続しない）: `.\.venv\Scripts\python.exe manual\run.py --replay`
+
+## PoC-3（自動の方式）: 組織版での書式の往復（社内 PC）
+
+画面ありの Edge を最小化して、入力方法の診断（S0 の自動版）と課題 S1・S1b・S2・S3 を自動で行う。架空の依頼を合計 7 回ほど送る。OS のクリップボードは使わない。
+
+```powershell
+$env:POC_URL = "https://m365.cloud.microsoft/chat"
+.\.venv\Scripts\python.exe poc3_auto\roundtrip.py --url $env:POC_URL
+```
+
+- Edge のウィンドウが開いて最小化される。終わるまで（数分）触らない
+- 結果: `out\poc3-auto-report.md`（会話の本文は含まない）。全行を詳細も含めて貼ってほしい
+- 入力方法の診断だけ: `--only-s0`。診断を飛ばして入力方法を指定: `--method paste_html`
