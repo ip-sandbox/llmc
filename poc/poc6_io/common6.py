@@ -193,7 +193,7 @@ def wait_answer(tid: str, sent: str, timeout: float = 1800, want=("LLMC-DONE", "
 
 
 HINTS = {  # 書式どおりでない回答の中身を、英数字のコードで示す（--short の要約でも読めるように）
-    "DL": r"ダウンロード|download|ファイルを(作成|生成|用意)|\.txt\b|添付",
+    "DL": r"ダウンロード|download|添付|リンク|ファイルとして(作成|生成|用意|保存)",
     "LIMIT": r"上限|長すぎ|長い|制限|too long|limit",
     "REFUSE": r"申し訳|できません|お応えできません|cannot|can't|unable",
     "SPLIT": r"分割|複数回|続き|分けて",
@@ -206,7 +206,9 @@ def response_hints(text: str, html_raw: bytes | None) -> dict:
     """回答が書式どおりでないときに、何が起きたかの手がかりを返す。"""
     t = text or ""
     frag = parse_cf_html(html_raw)["fragment"] if html_raw else ""
-    found = [k for k, pat in HINTS.items() if re.search(pat, t, re.I | re.M)]
+    # 手がかりは、コードブロックの外の文章だけから探す（ファイルの中身の語に反応しないため）
+    prose = re.sub(r"<[^>]+>", " ", re.sub(r"<(pre|style|head)[^>]*>.*?</\1>", " ", frag, flags=re.S)) if frag else t
+    found = [k for k, pat in HINTS.items() if re.search(pat, prose, re.I | re.M)]
     return {"hint": "+".join(found) or "none", "links": len(re.findall(r"<a\s", frag)), "pres": len(re.findall(r"<pre", frag)),
             "imgs": len(re.findall(r"<img", frag)), "buttons": len(re.findall(r"<button", frag)),
             "llmc_lines": sum(1 for x in t.split("\n") if x.strip().startswith("LLMC-"))}
