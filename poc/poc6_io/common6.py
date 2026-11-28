@@ -300,10 +300,16 @@ class AutoSender:
         w = self.drv.send_and_wait(timeout=self.timeout, tid=tid)
         if not w["ok"]:
             return {"error": w.get("error")}
+        if w.get("no_copy_button"):
+            # 応答のコピーのボタンが出なかった。DOM から取る（PoC-6 で、DOM の <pre> とコピーの HTML は一致した）
+            r = self.drv.tail(tid, full=True)
+            frag = "<html><body><!--StartFragment-->" + (r.get("html") or "") + "<!--EndFragment--></body></html>"
+            return {"text": r.get("text") or "", "html": frag.encode("utf-8"), "seconds": round(time.time() - t0, 1),
+                    "extract": "dom", "dom_pres": r.get("n_pre")}
         t, h = self.drv.copy_last(tid=tid)
         if not h:
             return {"error": "コピーの HTML を横取りできなかった"}
-        return {"text": t or "", "html": h.encode("utf-8"), "seconds": round(time.time() - t0, 1)}
+        return {"text": t or "", "html": h.encode("utf-8"), "seconds": round(time.time() - t0, 1), "extract": "copy"}
 
     def dom_pres(self, tid: str):
         return self.page.evaluate(PRE_JS, tid)

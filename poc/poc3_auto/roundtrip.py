@@ -82,16 +82,45 @@ class Driver:
       return {q: qs.length, n: btns.length, stop, byId, qall: all.length};
     }"""
 
-    def send_and_wait(self, timeout: float = 240, tid: str | None = None) -> dict:
+    # 最後の利用者のメッセージ（ターン ID を含むもの）の行より後ろの要素を集める。応答のコピーのボタンが出ない回答の代わりの抽出に使う
+    TAIL_JS = r"""([tid, full]) => {
+      const all = Array.from(document.querySelectorAll('[data-testid=chatQuestion]'));
+      let qs = all.filter(q => q.textContent.includes(tid));
+      if (!qs.length) return {found: false, text_len: 0};
+      let row = qs[qs.length - 1];
+      while (row.parentElement && row.parentElement.children.length < 2 && row.parentElement !== document.body) row = row.parentElement;
+      const sibs = [];
+      for (let e = row.nextElementSibling; e; e = e.nextElementSibling) sibs.push(e);
+      const text = sibs.map(e => e.innerText || '').join('\n');
+      const stop = Array.from(document.querySelectorAll('button')).some(b => /停止|Stop/i.test(b.getAttribute('aria-label') || ''));
+      const r = {found: true, text_len: text.length, stop, has_done: /LLMC-DONE/.test(text), n_pre: sibs.reduce((n, e) => n + e.querySelectorAll('pre').length, 0)};
+      if (full) { r.text = text; r.html = sibs.map(e => e.outerHTML).join(''); }
+      return r;
+    }"""
+
+    def tail(self, tid: str, full: bool = False) -> dict:
+        return self.page.evaluate(self.TAIL_JS, [tid, full])
+
+    def send_and_wait(self, timeout: float = 240, tid: str | None = None, stable_s: float = 20) -> dict:
         p = self.page
         before = p.locator(COPY_BTN).count()
         q_before = p.locator("[data-testid=chatQuestion]").count()
         p.locator(SEND_BTN).first.click(timeout=10000)
         t0 = time.time()
         seen_q = False
+        last_len, since = -1, time.time()
         while time.time() - t0 < timeout:
             try:
                 if tid:
+                    # 応答のコピーのボタンが出ないまま、停止ボタンが無く、回答の文字が stable_s 秒変わらなければ完了とみなす
+                    # （組織版のループで、読み取り要求への返答の後の回答にコピーのボタンが出なかった。PoC-7）
+                    t = self.tail(tid)
+                    if t["text_len"] != last_len:
+                        last_len, since = t["text_len"], time.time()
+                    elif (t["found"] and t["text_len"] > 0 and not t["stop"]
+                          and time.time() - since >= (stable_s if t.get("has_done") else 3 * stable_s)):
+                        if p.evaluate(self.AFTER_JS, [COPY_BTN, tid])["n"] == 0:
+                            return {"ok": True, "seconds": round(time.time() - t0, 1), "no_copy_button": True}
                     r = p.evaluate(self.AFTER_JS, [COPY_BTN, tid])
                     seen_q = seen_q or r.get("byId", False)
                     # ID で見つからない場合は、利用者のメッセージが増えたとき（新しいメッセージが最後）だけ、最後のメッセージを使う

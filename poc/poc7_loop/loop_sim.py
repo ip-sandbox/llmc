@@ -156,6 +156,9 @@ def main() -> int:
                     stats["warnings"][k] = stats["warnings"].get(k, 0) + 1
                 info = {"k": res.kind, "E": [e.split(":")[0] for e in res.errors], "W": [w.split(":")[0] for w in res.warnings],
                         "reads": res.reads, "sec": got["seconds"], "chars": len(got["text"] or "")}
+                if got.get("extract") == "dom":  # 応答のコピーのボタンが出ず、DOM から取った
+                    info["ext"] = "dom"
+                    stats["dom"] = stats.get("dom", 0) + 1
                 if res.kind == "no_protocol":
                     info.update(response_hints(got["text"], got["html"]))
                 rep.add(sec, f"T{turn}", "OK" if res.kind in ("complete", "empty") else "WARN" if res.reads else "NG", info)
@@ -218,7 +221,7 @@ def main() -> int:
         sender.close()
     rep.add("集計", "全体", "INFO", {"turns": stats["turns"], "kinds": stats["kinds"], "errors": stats["errors"],
                                     "warnings": stats["warnings"], "reads": stats["reads"], "conts": stats["conts"],
-                                    "retries": stats["retries"], "best": best})
+                                    "retries": stats["retries"], "dom": stats.get("dom", 0), "best": best})
     print(f"\nレポート: {rep.write()}", file=sys.stderr)
     from common.digest import show
     show([rep.name])
