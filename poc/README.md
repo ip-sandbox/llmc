@@ -293,13 +293,13 @@ v1 はデーモンを作らない（plan 前提 19）、RDP では使わない�
 
 ```powershell
 .\.venv\Scripts\python.exe poc8_daemon\runtime_check.py make-launcher          # out\poc8c\bin\llmc-poc8.exe を作る（最初に 1 回）
-out\poc8c\bin\llmc-poc8.exe run --url $env:POC_URL                              # 1. 準備ができたら Ctrl+C を 1 回押す → q で終わる
-out\poc8c\bin\llmc-poc8.exe run --url $env:POC_URL --send                       # 2. 「sent」と出たら、すぐ Ctrl+C（生成中に停止ボタンを押す）→ q
-out\poc8c\bin\llmc-poc8.exe run --url $env:POC_URL                              # 3. 準備ができたら、表示された taskkill /F /PID ... を別の PowerShell で実行
+.\out\poc8c\bin\llmc-poc8.exe run --url $env:POC_URL                              # 1. 準備ができたら Ctrl+C を 1 回押す → q で終わる
+.\out\poc8c\bin\llmc-poc8.exe run --url $env:POC_URL --send                       # 2. 「sent」と出たら、すぐ Ctrl+C（生成中に停止ボタンを押す）→ q
+.\out\poc8c\bin\llmc-poc8.exe run --url $env:POC_URL                              # 3. 準備ができたら、表示された taskkill /F /PID ... を別の PowerShell で実行
 .\.venv\Scripts\python.exe poc8_daemon\runtime_check.py check                  #    → Edge とドライバが残っていないか
-out\poc8c\bin\llmc-poc8.exe run --url $env:POC_URL                              # 4. 準備ができたら、この PowerShell のウィンドウを × で閉じる
+.\out\poc8c\bin\llmc-poc8.exe run --url $env:POC_URL                              # 4. 準備ができたら、この PowerShell のウィンドウを × で閉じる
 .\.venv\Scripts\python.exe poc8_daemon\runtime_check.py check                  #    → 別の PowerShell で
-out\poc8c\bin\llmc-poc8.exe run --url $env:POC_URL --fix-exit-type              # 5. 強制終了の後の起動。Edge のウィンドウを元に戻し、「ページを復元」の表示が無いかを見る → q
+.\out\poc8c\bin\llmc-poc8.exe run --url $env:POC_URL --fix-exit-type              # 5. 強制終了の後の起動。Edge のウィンドウを元に戻し、「ページを復元」の表示が無いかを見る → q
 .\.venv\Scripts\python.exe poc8_daemon\runtime_check.py schedule --url $env:POC_URL --send   # 6. タスクスケジューラ（ログオンしているときのみ）から起動して 1 回送る
 .\.venv\Scripts\python.exe poc8_daemon\runtime_check.py report                 # 最後に要約を貼る
 ```

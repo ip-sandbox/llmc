@@ -12,9 +12,9 @@
 
 使い方（poc フォルダで）:
   .\\.venv\\Scripts\\python.exe poc8_daemon\\runtime_check.py make-launcher        起動用のプログラムを作る（out\\poc8c\\bin\\llmc-poc8.exe）
-  out\\poc8c\\bin\\llmc-poc8.exe run --url $env:POC_URL                           起動して待つ。Ctrl+C を押して試す。q で終わる
-  out\\poc8c\\bin\\llmc-poc8.exe run --url $env:POC_URL --send                    （組織版）長い回答を頼み、生成中に Ctrl+C で止める
-  out\\poc8c\\bin\\llmc-poc8.exe run --url $env:POC_URL --ctrlc signal            比べるため: 入力モードを変えずに Ctrl+C を受ける（前の形）
+  .\\out\\poc8c\\bin\\llmc-poc8.exe run --url $env:POC_URL                           起動して待つ。Ctrl+C を押して試す。q で終わる
+  .\\out\\poc8c\\bin\\llmc-poc8.exe run --url $env:POC_URL --send                    （組織版）長い回答を頼み、生成中に Ctrl+C で止める
+  .\\out\\poc8c\\bin\\llmc-poc8.exe run --url $env:POC_URL --ctrlc signal            比べるため: 入力モードを変えずに Ctrl+C を受ける（前の形）
   .\\.venv\\Scripts\\python.exe poc8_daemon\\runtime_check.py check               残った Edge・ドライバを調べる（強制終了の後に）
   .\\.venv\\Scripts\\python.exe poc8_daemon\\runtime_check.py schedule --url $env:POC_URL [--send]   タスクスケジューラから起動する
   .\\.venv\\Scripts\\python.exe poc8_daemon\\runtime_check.py report
