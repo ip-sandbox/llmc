@@ -72,7 +72,8 @@ class Report:
     """status は OK / NG / WARN / INFO / SKIP のいずれか。"""
 
     def __init__(self, name: str, title: str):
-        self.name = name
+        # 偽の回答での試験（LLMC_POC_REPORT_SUFFIX）では、利用者の本物の結果を上書きしないよう別の名前にする
+        self.name = name + os.environ.get("LLMC_POC_REPORT_SUFFIX", "")
         self.title = title
         self.items: list[dict] = []
         self.started = datetime.datetime.now()

@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
@@ -29,7 +30,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "poc6_io"))
 sys.path.insert(0, str(HERE.parent))
-from common6 import OUT, add_sender_args, apply_filler, choose_filler, make_sender, parse_cf_html, response_hints  # noqa: E402
+from common6 import OUT, add_sender_args, apply_filler, choose_filler, make_sender, parse_cf_html, response_hints, restore_filler  # noqa: E402
 import run as M  # noqa: E402
 from common.report import Report  # noqa: E402
 from htmlseg import segments  # noqa: E402
@@ -101,12 +102,13 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--rounds", type=int, default=10)
     ap.add_argument("--reopen-at", type=int, default=5, help="自動の方式で、このラウンドの後に会話の URL を開き直す（0 で行わない）")
+    ap.add_argument("--read-at", type=int, default=3, help="このラウンドで、docs/hints.md を読み取り要求で読んでから提案するよう頼む（0 で頼まない）")
     add_sender_args(ap)
     a = ap.parse_args()
     if a.auto and not a.url:
         ap.error("--auto には --url が必要")
     rep = Report("poc7-loop-auto" if a.auto else "poc7-loop", "PoC-7: ループの模擬" + ("（自動）" if a.auto else ""))
-    ws = OUT / ("poc7-ws-auto" if a.auto else "poc7-ws")
+    ws = OUT / (("poc7-ws-auto" if a.auto else "poc7-ws") + os.environ.get("LLMC_POC_REPORT_SUFFIX", ""))
     if ws.exists():
         shutil.rmtree(ws)
     (ws / "config").mkdir(parents=True)
@@ -125,7 +127,13 @@ def main() -> int:
             sec = f"ラウンド {rnd}"
             long_rules = rnd == 1 or rnd % 5 == 1
             tid = M.new_tid()
-            text, sha, ctx = build(tid, rnd, long_rules, last, history, ws)
+            # 1 回目の実行では、AI は読み取り要求を一度も使わなかった。読み取りの往復を確かめるため、このラウンドだけ明示的に頼む
+            extra = ("このラウンドでは、提案の前に docs/hints.md を読み取り要求で読んでください。"
+                     "このターンは読み取り要求だけを書き、ファイルは出力しないでください。読み取り要求の書き方: "
+                     "計画のコードブロックに LLMC-PLAN id=<ID> read=\"docs/hints.md\"、別のコードブロックに "
+                     "LLMC-READ id=<ID> path=\"docs/hints.md\"、最後に LLMC-DONE。llmc が中身を返すので、それを見てから提案してください。"
+                     ) if rnd == a.read_at else ""
+            text, sha, ctx = build(tid, rnd, long_rules, last, history, ws, extra)
             filler = choose_filler(ctx.values())
             turn, res, new_chat = 0, None, rnd == 1
             while turn < 5:
@@ -182,7 +190,12 @@ def main() -> int:
                 rep.add(sec, "書き込み", "NG", {"許可されないパス": bad})
                 history.append(f"- ラウンド {rnd}: 許可されないパス")
                 continue
+            for b in res.files:  # 空行の代わりの行を空行に戻す（1 回目の実行では戻しておらず、空行が空白 1 個の行になった）
+                b.lines = restore_filler(b.lines, filler)
             M.apply(res, ws)
+            ws_lines = [i + 1 for i, x in enumerate((ws / CFG).read_text(encoding="utf-8").split("\n")) if x and not x.strip()]
+            if ws_lines:
+                rep.add(sec, "空白だけの行", "WARN", {"行": ws_lines})
             last = bench(ws)
             improved = last["ok"] and (best is None or last["tp"] > best * 1.0001)
             if improved:
