@@ -226,7 +226,7 @@ stateDiagram-v2
 | 分類 | 動作 | ラウンドのターン数 |
 |---|---|---|
 | `complete` | 書き込みへ進む | — |
-| `truncated` | 続きを依頼する（spec-file-protocol 6.7）。上限は `continue_max`（既定 2） | +1 |
+| `truncated` | 続きを依頼する（spec-file-protocol 6.7）。未完成の項目の文脈ファイルは全文を送り直す（PoC-7）。上限は `continue_max`（既定 2） | +1 |
 | `invalid` | エラーの内容を添えて出し直しを依頼する。上限は `retry_max`（既定 1）。超えたら、そのラウンドを「形式違反」とする | +1 |
 | `empty` | 「改善案なし」。停止の理由として記録し、止める（`stop.on_empty: true`、既定） | — |
 | `no_protocol` | 断り・質問・雑談として扱う。6.3 | +0〜1 |

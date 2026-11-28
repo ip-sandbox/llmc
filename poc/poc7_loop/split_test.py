@@ -132,11 +132,22 @@ def run_a(rep, sender, pre):
         parts[int(got_part["part"] or turn)] = got_part
         if got_part["final"]:
             break
-        nxt = got_part["pend"].get("next_line") if got_part["pend"] else "?"
+        # 続きの開始行は llmc が数える（AI の next_line は照合にだけ使う）。
+        # 個人版の実測: 続きだけを頼むと、AI は「前のファイルの全文を保持していない」と断った。そのため、残りの範囲の元の中身を毎回送る
+        start = sum(len(p["lines"]) for p in parts.values()) + 1
+        nxt = got_part["pend"].get("next_line") if got_part["pend"] else None
+        if nxt and str(nxt) != str(start):
+            rep.add(sec, f"ターン {turn} の next_line", "WARN", {"AI": nxt, "llmc が数えた": start})
+        rest = ORIG.rstrip("\n").split("\n")[start - 1:]
+        ctx = (f'````\nLLMC-CTX path="{PATH}" sha={sha} range=lines={start}-{N}\n' + "\n".join(rest)
+               + f'\nLLMC-CTX-END path="{PATH}"\n````')
         tid = M.new_tid()
-        text = (f"llmc プロトコル: llmc/1（規則の版 {M.REV}）\nこのターンの ID: {tid}\n\n# 依頼\n続きを出力してください: {PATH} の part={int(got_part['part'] or turn) + 1}"
-                f"（{nxt} 行目から）。形は前と同じ（LLMC-FILE ... part=、最後の部分なら LLMC-END と LLMC-DONE、そうでなければ LLMC-PART-END と LLMC-CONTINUE）。"
-                f"計画は書かない。\n\nこのターンの ID: {tid}（回答の LLMC- の行には、この ID を使ってください）")
+        part_no = int(got_part["part"] or turn) + 1
+        text = "\n".join([f"llmc プロトコル: llmc/1（規則の版 {M.REV}）\nこのターンの ID: {tid}\n", RULE_A, "", "# 依頼",
+                          f"{TASK}\n前の回答の続きとして、{PATH} の part={part_no}（{start} 行目から）を出力してください。"
+                          "計画は書かない。base は前と同じ sha。", "",
+                          f"# 元のファイルの残りの部分（{start} 行目から最後まで。変更を加える前の中身）", ctx, "",
+                          f"このターンの ID: {tid}（回答の LLMC- の行には、この ID を使ってください）"])
         turn += 1
     lines = [x for k in sorted(parts) for x in parts[k]["lines"]]
     lines = ["" if x == filler else x for x in lines]
