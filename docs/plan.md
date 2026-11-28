@@ -154,7 +154,7 @@ PoC の結果と設計への影響は `docs/poc-findings.md` にまとめる。
 | 3 | 確認 | **PoC-7 ループの模擬（多くのターン）** | (0) 出力の上限を超えるファイルの書き換え: 分割の出力（案 A）と範囲の置き換え（案 B）の守られ方を比べる（spec-file-protocol 11.1。**個人版で済**: 両方とも成立。v1 は拒否、A・B は v2 の候補と決定）。出力の上限の正確な値（400・600 行など）(a) 同じチャットで 10 ラウンド（個人・組織）: 形式違反・警告・省略・`base` の誤りの率 (b) 読み取り要求（`LLMC-READ`）の往復 (c) 途中切れからの続きの依頼 (d) 会話の URL を新しいページで開いて続行、10 ターン以上での回答の特定（仮想スクロール）(e) 100 秒を超える長い回答を最小化したまま取り、完了の信号（停止ボタン・コピーボタン）を記録 | spec-loop、spec-agent、spec-browser-driver 5・6・8 |
 | 4 | 設計 | spec-loop・spec-agent の確定、spec-daemon と spec-auth の下書き（**済**。2026-11-28。spec-agent の `agent` の部分は暫定のまま） | — | spec-loop、spec-agent |
 | 5 | 確認 | **PoC-8 常駐とログインの保持** | (a) pythonw から画面ありの Edge を起動して最小化し、クライアントの終了後も残るか、利用者がウィンドウを閉じた・元に戻したときの検知、Edge の更新による再起動 (b) 画面のロック・RDP の切断・スリープの間も生成と抽出が続くか (c) タスクスケジューラ（ジョブの中）からの起動 (d) ログインの保持（1・3・7 日後）、最小化したまま SSO が切れたときの画面 (e) Playwright 用の別の user-data-dir がポリシーで拒否されないか | spec-daemon、spec-auth |
-| 6 | 設計 | spec-daemon・spec-auth の確定、spec-convert の下書き | — | spec-daemon、spec-auth |
+| 6 | 設計 | spec-daemon・spec-auth の確定、spec-convert の下書き（**spec-convert の下書きは済**: docs/spec-convert.md。PoC-8 の結果を待つ間に前倒しした。方式 B と添付は PoC-5 で確かめる） | — | spec-daemon、spec-auth |
 | 7 | 確認 | **PoC-5 組織の機能**（利用者の組織版だけ） | (a) 利用上限の表示の文言（`rate_limit_patterns`）(b) 「職場 / Web」の表示（`mode_indicator`）(c) 停止ボタンで止めた後のコピーの形 (d) 添付・ダウンロード・コードインタープリターの成果物 (e) エージェントビルダー (f) マスクの文字列 `@@LLMC-MASK-0001@@` がそのまま書き返されるか | spec-convert、spec-agent、spec-security の一部 |
 | 8 | 設計 | spec-convert の確定、残りの仕様書（spec-security、spec-tui、spec-shell-integration、test-plan、milestones、open-questions） | 残りで実物の確認が要る項目が出たら、同じ形で PoC を挟む | 全部 |
 
