@@ -10,6 +10,8 @@
     E4: PowerShell の「[名前]::」など（個人版で壊れた）
     E5: E4 の [ ] を ⟦ ⟧ に置き換えて出させる（AI に届いた時点で壊れているかの切り分け）
     E6: 壊れる形の規則と、代わりの記号の候補（21 行）
+    E7: URL がリンクの HTML になるのは、AI に届く前か、回答か（「:」を「⟦:⟧」にして出させる）
+    E8: 「[名前]」の直後の「:」を「⟦U+003A⟧」と書く規則を、AI が新しく書くコードで守るか
 
 使い方:
   個人版（人が送信する）: .\\.venv\\Scripts\\python.exe poc6_io\\echo_fidelity.py [--only E1]
@@ -61,7 +63,24 @@ E6_LINES = [
     "⟦U+005B⟧math]::Round", "[math⟦U+005D⟧::Round", "[math]⟦U+003A⟧:Round",
 ]
 E6 = "# 架空の形の確認\n" + "".join(f"{x} # L{i:02d}\n" for i, x in enumerate(E6_LINES, 1))
+# E7: URL が <a href=... class="fai-ChatInputEntity__text"> になった（E5・E6）。AI に届いた時点でそうなのか、回答で変わるのか。
+# すべての「:」を「⟦:⟧」にして出させる（AI に HTML で届いていれば <a href="https⟦:⟧// が返る）。
+# さらに、AI が自分で組み立てた URL の行を足させる（回答の側でリンクの HTML になるか）
+E7 = ("# 架空の URL の形\nx https://example.invalid/path y\nx http://example.invalid/ y\nx www.example.invalid y\n"
+      "x example.com y\nx a@example.invalid y\n$u = \"https://example.invalid/a?b=1\"\n<https://example.invalid/>\n")
+E7_NEW = "https" + "://example.invalid/new"
+# E8: 規則（spec-file-protocol 9.7）を AI が守るか。送る文脈は代わりの記号にした E4。既存の行はそのまま、新しいコードは AI が書く
+PH = "⟦U+003A⟧"
+E8 = re.sub(r"(\[[A-Za-z0-9_]+\]):", lambda m: m.group(1) + PH,
+             E4.replace("[link]: https://example.invalid/path\n", ""))  # URL の問題（E7）と混ぜない
+TASK8 = (f"規則: 「[」英数字「]」の直後に「:」を書くときは、その「:」を「{PH}」と書いてください（例: [math]{PH}:Floor）。"
+         f"ファイルにある「{PH}」は変えずに書き返してください。\n"
+         "送ったファイルの既存の行は 1 文字も変えずに、最後に次の 3 行の PowerShell のコードを足してください。"
+         "(1) $x を [math] の Round で小数 1 桁に丸めて $y に入れる (2) [string] の Join で 'p' と 'q' を '-' でつなぎ $z に入れる "
+         "(3) [Console] の OutputEncoding に [System.Text.Encoding] の UTF8 を入れる。")
 ADD = "# 確認済み"
+TASK7 = ("送ったファイルのすべての「:」を「⟦:⟧」に置き換えてください。次に、「https」と「//example.invalid/new」を「:」でつないだ文字列"
+         f"（置き換えない）だけの行を 1 行追加し、最後に 1 行「{ADD}」を追加してください。それ以外は 1 文字も変えずに、ファイル全体を出力してください。")
 TASK = (f"送ったファイルの最後に 1 行「{ADD}」を追加してください。それ以外は 1 文字も変えずに、ファイル全体を出力してください。"
         "空行・空白だけの行・行頭と行末の空白・タブ・特殊な空白もそのまま保ってください。")
 TASK5 = (f"送ったファイルのすべての「[」を「{LB}」に、すべての「]」を「{RB}」に置き換え、最後に 1 行「{ADD}」を追加してください。"
@@ -74,7 +93,21 @@ CASES = {
     "E5": {"path": "scripts/sample.ps1", "text": E4, "task": TASK5,
            "want": E4.replace("[", LB).replace("]", RB)},
     "E6": {"path": "scripts/forms.ps1", "text": E6},
+    "E7": {"path": "docs/urls.md", "text": E7, "task": TASK7, "want": E7.replace(":", "⟦:⟧") + E7_NEW + "\n"},
+    "E8": {"path": "scripts/sample.ps1", "text": E8, "task": TASK8, "rule_check": True},
 }
+
+
+def rule_check(text: str, lines: list[str]) -> dict:
+    """E8: 既存の行が保たれたか、足した行で代わりの記号を守ったか、消えた形（:Round など）が無いか。"""
+    old = text.rstrip("\n").split("\n")
+    added = lines[len(old):]
+    stripped = [x for x in lines if re.search(r"(^|[=(\s]):[A-Za-z]", x)]
+    raw = [x for x in added if re.search(r"\[[A-Za-z0-9_]+\]:", x)]
+    return {"既存の行が同じ": lines[:len(old)] == old, "足した行": added,
+            "足した行の代わりの記号の数": sum(x.count(PH) for x in added),
+            "そのままの [名前]: （消える形）": raw, "消えた跡に見える行": stripped,
+            "合格": lines[:len(old)] == old and not raw and not stripped and sum(x.count(PH) for x in added) >= 3}
 
 
 def classify(want: list[str], got: list[str]) -> dict:
@@ -113,7 +146,8 @@ def main() -> int:
     if a.auto and not a.url:
         ap.error("--auto には --url が必要")
     pre = "auto-" if a.auto else ""
-    rep = Report("poc6-echo-auto" if a.auto else "poc6-echo",
+    # --only のときは事例ごとの名前にする（続けて実行すると前の結果が上書きされたため）
+    rep = Report(("poc6-echo-auto" if a.auto else "poc6-echo") + (f"-{a.only}" if a.only else ""),
                  "PoC-6 (a)(d): 空行の代わりの行と、コピーの HTML の忠実さ" + ("（自動）" if a.auto else ""))
     sender = make_sender(a)
     try:
@@ -167,7 +201,13 @@ def _run(a, rep, sender, pre) -> int:
             continue
         raw_lines = res.files[0].lines
         restored = restore_filler(raw_lines, filler)
-        want = (c.get("want", c["text"]).rstrip("\n") + "\n" + ADD).split("\n")
+        if c.get("rule_check"):
+            rc = rule_check(c["text"], restored)
+            rep.add(sec, "規則（⟦U+003A⟧）を守ったか", "OK" if rc["合格"] else "NG", rc)
+            record[name] = {"tid": tid, "path": c["path"]}
+            rep.write()
+            continue
+        want =(c.get("want", c["text"]).rstrip("\n") + "\n" + ADD).split("\n")
         broken = [f"{w!r} → {g!r}" for w, g in zip(want, restored) if w != g]
         if broken:  # 壊れた行をすべて（E4〜E6 の切り分けのため。短縮の要約にも出る）
             rep.add(sec, "変わった行", "NG", {"数": len(broken), "行": broken})

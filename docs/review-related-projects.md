@@ -30,7 +30,7 @@
 
 | 項目 | 内容 | 反映先 |
 |---|---|---|
-| **`[名前]:` の破壊** | copilot-operator の報告: Copilot は `[math]::Round($x, 2)` を `:Round($x, 2)` に変える（**コードブロックの中でも**）。Markdown の参照リンクの定義（`[name]: url`）として扱われると見られる。PowerShell の型の書き方（`[string]::Join` など）はこれに当たる | **PoC-6 の E4 で確かめる**（`echo_fidelity.py --only E4`）。壊れるなら、`[` で始まり `]:` を含む行を代わりの記号にして送る（U+00A0 と同じ方式）か、そのファイルを書き換えられないものとして扱う。spec-file-protocol 9.6 |
+| **`[名前]:` の破壊** | copilot-operator の報告: Copilot は `[math]::Round($x, 2)` を `:Round($x, 2)` に変える（**コードブロックの中でも**）。Markdown の参照リンクの定義（`[name]: url`）として扱われると見られる。PowerShell の型の書き方（`[string]::Join` など）はこれに当たる | **個人版で再現した**（PoC-6 の E4〜E6）。AI には届き、回答の側で消える。`[` 英数字と `_` だけ `]` の直後の `:` を `⟦U+003A⟧` にする方式を spec-file-protocol 9.7 に書いた |
 | 長いコードブロックの DOM | DOM の `innerText` では、長いコードブロックに行番号が混ざり（120 行が 242 行に）、「さらに表示」で折りたたまれる | DOM 方式（PoC-7 で加えた代わりの抽出）は、**短い回答に限る**。行番号の混入・折りたたみを検出したら抽出の失敗にする。spec-browser-driver 7.2 |
 | 送信ボタンの範囲 | 入力欄の枠（`chat-input-wrapper`）の中だけで探す | spec-browser-driver 3.2・4.3 |
 | 初回の窓 | 「後で」「閉じる」など**断る側**のボタンだけを押す。「確認」など受け入れる側は押さない | spec-browser-driver 11 章 |
