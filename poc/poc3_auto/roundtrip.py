@@ -66,28 +66,56 @@ class Driver:
         p.wait_for_timeout(800)
         return p.evaluate("(s) => document.querySelector(s).textContent.replace(/[\\u200b-\\u200d\\ufeff]/g,'').length", INPUT)
 
-    def send_and_wait(self, timeout: float = 240) -> dict:
+    # ターン ID を含む最後の利用者のメッセージより「後ろ」にある、応答のコピーのボタンを探して印を付ける。
+    # 数を数える方式（前の実装）は、会話が長くなると古いメッセージが DOM から外れて数が増えず、完了を見逃した（PoC-7、組織版）
+    AFTER_JS = r"""([sel, tid]) => {
+      const all = Array.from(document.querySelectorAll('[data-testid=chatQuestion]'));
+      let qs = all.filter(q => !tid || q.textContent.includes(tid));
+      const byId = qs.length > 0;
+      if (!qs.length) qs = all;  // 長いメッセージが折りたたまれて ID が見えない場合は、最後の利用者のメッセージを使う
+      if (!qs.length) return {q: 0, n: 0, byId, qall: 0};
+      const q = qs[qs.length - 1];
+      document.querySelectorAll('[data-llmc-copy]').forEach(b => b.removeAttribute('data-llmc-copy'));
+      const btns = Array.from(document.querySelectorAll(sel)).filter(b => q.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+      if (btns.length) btns[0].setAttribute('data-llmc-copy', '1');
+      const stop = Array.from(document.querySelectorAll('button')).some(b => /停止|Stop/.test(b.getAttribute('aria-label') || ''));
+      return {q: qs.length, n: btns.length, stop, byId, qall: all.length};
+    }"""
+
+    def send_and_wait(self, timeout: float = 240, tid: str | None = None) -> dict:
         p = self.page
         before = p.locator(COPY_BTN).count()
+        q_before = p.locator("[data-testid=chatQuestion]").count()
         p.locator(SEND_BTN).first.click(timeout=10000)
         t0 = time.time()
+        seen_q = False
         while time.time() - t0 < timeout:
             try:
-                if p.locator(COPY_BTN).count() > before:
-                    p.wait_for_timeout(1500)  # 操作欄が出そろうのを待つ
+                if tid:
+                    r = p.evaluate(self.AFTER_JS, [COPY_BTN, tid])
+                    seen_q = seen_q or r.get("byId", False)
+                    # ID で見つからない場合は、利用者のメッセージが増えたとき（新しいメッセージが最後）だけ、最後のメッセージを使う
+                    if r["n"] > 0 and (r.get("byId") or r.get("qall", 0) > q_before):  # 応答のコピーは完了後にだけ現れる（PoC-2）。停止ボタンは名前の一致が不確かなので判定に使わない
+                        p.wait_for_timeout(1500)  # 操作欄が出そろうのを待つ
+                        return {"ok": True, "seconds": round(time.time() - t0, 1), "found_question": seen_q}
+                elif p.locator(COPY_BTN).count() > before:
+                    p.wait_for_timeout(1500)
                     return {"ok": True, "seconds": round(time.time() - t0, 1)}
                 if p.get_by_text("要求を完了できませんでした").count():
                     return {"ok": False, "error": "要求を完了できませんでした"}
             except Exception:  # noqa: BLE001  遷移中
                 pass
             p.wait_for_timeout(500)
-        return {"ok": False, "error": "時間切れ"}
+        return {"ok": False, "error": "時間切れ" + ("" if seen_q or not tid else "（ID を含む利用者のメッセージが見つからない）")}
 
-    def copy_last(self) -> tuple[str | None, str | None]:
+    def copy_last(self, tid: str | None = None) -> tuple[str | None, str | None]:
         p = self.page
         p.evaluate("window.__llmc.armed = true; window.__llmc.got = []")
         try:
-            p.locator(COPY_BTN).last.click(timeout=10000)
+            if tid and p.evaluate(self.AFTER_JS, [COPY_BTN, tid])["n"] > 0:
+                p.locator("[data-llmc-copy]").first.click(timeout=10000)
+            else:
+                p.locator(COPY_BTN).last.click(timeout=10000)
             for _ in range(20):
                 p.wait_for_timeout(200)
                 got = p.evaluate("window.__llmc.got")

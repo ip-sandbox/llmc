@@ -297,10 +297,10 @@ class AutoSender:
             self.drv.new_chat()
         self.drv.put(text, "paste_text")  # 空行の代わりの行は、呼び出し元で入れてある
         t0 = time.time()
-        w = self.drv.send_and_wait(timeout=self.timeout)
+        w = self.drv.send_and_wait(timeout=self.timeout, tid=tid)
         if not w["ok"]:
             return {"error": w.get("error")}
-        t, h = self.drv.copy_last()
+        t, h = self.drv.copy_last(tid=tid)
         if not h:
             return {"error": "コピーの HTML を横取りできなかった"}
         return {"text": t or "", "html": h.encode("utf-8"), "seconds": round(time.time() - t0, 1)}
