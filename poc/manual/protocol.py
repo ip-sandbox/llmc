@@ -201,7 +201,8 @@ def parse(text: str | None, tid: str, rev: str | None = None, ctx_sha: dict[str,
             cur = Block(path=norm_path(p), base=attrs.get("base"))
             r.files.append(cur)
             if fence is None and not plain_copy:
-                r.warnings.append(f"W_FILE_OUTSIDE_FENCE: {p}")
+                # 描画される文章の中のパスは壊れている恐れがある（__init__ → init）。書き込み先を誤らないよう拒否する
+                r.errors.append(f"E_RENDERED_DIRECTIVE: FILE {p}")
             continue
         if kind == "DONE":
             if r.done is not None:
@@ -215,6 +216,10 @@ def parse(text: str | None, tid: str, rev: str | None = None, ctx_sha: dict[str,
         if fence is None:
             if plain_copy:
                 r.warnings.append(f"W_PLAIN_COPY: {kind}")  # コピーでフェンスが取り除かれた。区分の確認ができない
+            elif kind == "PLAN":
+                # 計画は完全性の確認にしか使わない。パスが描画で壊れても計画の不一致で拒否されるだけで、
+                # 誤った場所には書き込まない。AI が計画を文章として書くことがある（組織版の PoC）ので受け付ける
+                r.warnings.append("W_PLAN_IN_TEXT")
             else:
                 r.errors.append(f"E_RENDERED_DIRECTIVE: {kind}")
                 continue

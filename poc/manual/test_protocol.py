@@ -60,8 +60,31 @@ class TestParse(unittest.TestCase):
         self.assertEqual(r.kind, "invalid")
 
     def test_plan_outside_fence(self):
+        # 計画は文章の中でも受け付ける（警告）。完全性の確認にしか使わないため
         r = parse(resp(f"LLMC-PLAN id={T} write=\"config/app.yaml\"", FILE, DONE), T)
-        self.assertEqual(r.kind, "invalid")
+        self.assertEqual(r.kind, "complete", r.summary())
+        self.assertIn("W_PLAN_IN_TEXT", r.warnings)
+
+    def test_plan_in_text_mangled_path_rejected(self):
+        # 文章の中の計画のパスが描画で壊れた（__init__ → init）場合は、計画の不一致で拒否される
+        segs = [("text", f'LLMC-PLAN id={T} write="pkg/init.py"'),
+                ("code", f'LLMC-FILE id={T} path="pkg/__init__.py" base=new\nx\nLLMC-END id={T} path="pkg/__init__.py"'),
+                ("code", f"LLMC-DONE v=1 id={T}")]
+        r = parse(None, T, segments=segs)
+        self.assertEqual(r.kind, "invalid", r.summary())
+        self.assertTrue(any(e.startswith("E_PLAN_MISMATCH") for e in r.errors))
+
+    def test_file_in_text_rejected(self):
+        segs = [("code", f'LLMC-PLAN id={T} write="pkg/init.py"'),
+                ("text", f'LLMC-FILE id={T} path="pkg/init.py" base=new\nx\nLLMC-END id={T} path="pkg/init.py"'),
+                ("code", f"LLMC-DONE v=1 id={T}")]
+        r = parse(None, T, segments=segs)
+        self.assertEqual(r.kind, "invalid", r.summary())
+
+    def test_delete_outside_fence_rejected(self):
+        d = f'LLMC-DELETE id={T} path="x.txt"'
+        p = f"{F4}\nLLMC-PLAN id={T} delete=\"x.txt\"\n{F4}"
+        self.assertEqual(parse(resp(p, d, DONE), T).kind, "invalid")
 
     def test_echoed_context(self):
         r = parse(f"{F4}\nLLMC-CTX path=\"a\" sha=1\nx\nLLMC-CTX-END path=\"a\"\n{F4}", T)
@@ -124,11 +147,13 @@ class TestCopilotCopy(unittest.TestCase):
         self.assertNotEqual(r.kind, "complete")
         self.assertTrue(any(e.startswith("E_SPLIT_BLOCK") for e in r.errors), r.summary())
 
-    def test_segments_plan_in_text_rejected(self):
+    def test_segments_plan_in_text_accepted(self):
         segs = [("text", f'LLMC-PLAN id={T} write="a.md"'),
                 ("code", f'LLMC-FILE id={T} path="a.md" base=new\nx\nLLMC-END id={T} path="a.md"'),
                 ("code", f"LLMC-DONE v=1 id={T}")]
-        self.assertEqual(parse(None, T, segments=segs).kind, "invalid")
+        r = parse(None, T, segments=segs)
+        self.assertEqual(r.kind, "complete", r.summary())
+        self.assertIn("W_PLAN_IN_TEXT", r.warnings)
 
     def test_html_segments(self):
         sys.path.insert(0, str(Path(__file__).resolve().parent))
