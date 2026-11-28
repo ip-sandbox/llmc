@@ -263,6 +263,17 @@ def parse(text: str | None, tid: str, rev: str | None = None, ctx_sha: dict[str,
             r.warnings.append(f"W_VERSION_MISMATCH: {r.done.get('v')}")
         if rev and r.done.get("rev") != rev:
             r.warnings.append(f"W_REV_MISMATCH: {r.done.get('rev')}")
+    # 削除の行を LLMC-FILE〜LLMC-END で囲んだ形（個人版の実測）。中身が同じパスの削除の 1 行だけで、
+    # 計画でもそのパスを削除するときに限り、削除として受け付ける（それ以外はファイルの中身のまま）
+    plan_del = {path_key(p) for o, p in r.plan if o == "delete"}
+    for b in list(r.files):
+        body = [l for l in b.lines if l.strip()]
+        if b.complete and len(body) == 1 and path_key(b.path) in plan_del:
+            m = re.fullmatch(r'\s*LLMC-DELETE\s+id=(\S+)\s+path="([^"]*)"\s*', body[0])
+            if m and m.group(1).upper() == tid.upper() and path_key(norm_path(m.group(2))) == path_key(b.path):
+                r.files.remove(b)
+                r.deletes.append(b.path)
+                r.warnings.append(f"W_DELETE_IN_FILE: {b.path}")
     ops = [("write", b.path) for b in r.files if b.complete] + [("delete", p) for p in r.deletes] + \
           [("read", p) for p in r.reads]
     keys = [(o, path_key(p)) for o, p in ops]

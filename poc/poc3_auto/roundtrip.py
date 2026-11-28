@@ -11,6 +11,7 @@
     $env:POC_URL = "https://m365.cloud.microsoft/chat"
     .\\.venv\\Scripts\\python.exe poc3_auto\\roundtrip.py --url $env:POC_URL
     .\\.venv\\Scripts\\python.exe poc3_auto\\roundtrip.py --url $env:POC_URL --only-s0     # 入力方法の診断だけ
+    .\\.venv\\Scripts\\python.exe poc3_auto\\roundtrip.py --url $env:POC_URL --method paste_space  # 課題だけ（推奨）
 結果: out\\poc3-auto-report.md
 """
 from __future__ import annotations
@@ -53,6 +54,8 @@ class Driver:
         p.click(INPUT)
         p.keyboard.press("Control+A")
         p.keyboard.press("Delete")
+        if method == "paste_space":  # 空行を空白 1 文字の行にしてテキストで貼る（個人版の人が送信する方式で全課題が通った形）
+            text, method = "\n".join(" " if x == "" else x for x in text.split("\n")), "paste_text"
         if method == "fill":
             p.fill(INPUT, text)
         else:
@@ -142,6 +145,7 @@ def run_scenarios(drv: Driver, rep, method: str) -> None:
     import run as M
     from scenarios import SCENARIOS
     ws = M.OUT_DIR / "poc3-auto-workspace"
+    M.PASTE = "space" if method == "paste_space" else "html" if method == "paste_html" else "text"  # 解析で空白だけの行を空行に戻すか
     for name in ("S1", "S1b", "S2", "S3"):
         sc = SCENARIOS[name]
         sec = f"{name}: {sc['title']}"
@@ -187,7 +191,7 @@ def main() -> int:
     ap.add_argument("--variant", default="msedge-headed")
     ap.add_argument("--no-minimize", action="store_true")
     ap.add_argument("--only-s0", action="store_true")
-    ap.add_argument("--method", choices=["fill", "paste_text", "paste_html"], help="S0 を飛ばして、この入力方法で課題を行う")
+    ap.add_argument("--method", choices=["fill", "paste_text", "paste_html", "paste_space"], help="S0 を飛ばして、この入力方法で課題を行う")
     a = ap.parse_args()
     os.environ["POC_URL"] = a.url
     from playwright.sync_api import sync_playwright

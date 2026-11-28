@@ -86,6 +86,22 @@ class TestParse(unittest.TestCase):
         p = f"{F4}\nLLMC-PLAN id={T} delete=\"x.txt\"\n{F4}"
         self.assertEqual(parse(resp(p, d, DONE), T).kind, "invalid")
 
+    def test_delete_wrapped_in_file(self):
+        p = f"{F4}\nLLMC-PLAN id={T} delete=\"x.txt\"\n{F4}"
+        f = f"{F4}\nLLMC-FILE id={T} path=\"x.txt\" base=12345678\nLLMC-DELETE id={T} path=\"x.txt\"\nLLMC-END id={T} path=\"x.txt\"\n{F4}"
+        r = parse(resp(p, f, DONE), T)
+        self.assertEqual(r.kind, "complete", r.summary())
+        self.assertEqual(r.deletes, ["x.txt"])
+        self.assertIn("W_DELETE_IN_FILE: x.txt", r.warnings)
+
+    def test_delete_wrapped_in_file_needs_plan(self):
+        # 計画が書き換えなら、削除の行はファイルの中身として扱う（削除しない）
+        p = f"{F4}\nLLMC-PLAN id={T} write=\"x.txt\"\n{F4}"
+        f = f"{F4}\nLLMC-FILE id={T} path=\"x.txt\" base=new\nLLMC-DELETE id={T} path=\"x.txt\"\nLLMC-END id={T} path=\"x.txt\"\n{F4}"
+        r = parse(resp(p, f, DONE), T)
+        self.assertEqual(r.deletes, [])
+        self.assertEqual(len(r.files), 1)
+
     def test_echoed_context(self):
         r = parse(f"{F4}\nLLMC-CTX path=\"a\" sha=1\nx\nLLMC-CTX-END path=\"a\"\n{F4}", T)
         self.assertEqual(r.kind, "no_protocol")

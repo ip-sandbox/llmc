@@ -15,7 +15,7 @@ LONG = """# 回答の書式（llmc/1）
    - コードブロックの1行目: LLMC-FILE id=<ID> path="<相対パス>" base=<送られたファイルの sha。新規作成なら new>
    - コードブロックの最終行: LLMC-END id=<ID> path="<相対パス>"
    - フェンスの開きの行には**言語名を書かない**（バッククォートだけの行にする）。言語名を付けると llmc が読み取れない。
-3. 削除は、コードブロックの中に LLMC-DELETE id=<ID> path="<相対パス>" と書く。
+3. 削除は、コードブロックの中に LLMC-DELETE id=<ID> path="<相対パス>" の1行だけを書く。LLMC-FILE と LLMC-END で囲まない。
 4. 変更点の説明は、最後に3行以内で書く。前置きは書かない。
 5. 回答の最後に、コードブロックの中に LLMC-DONE v=1 id=<ID> rev=<規則の版> と書く。
 6. <ID> は依頼文の「このターンの ID」の値、<規則の版> は依頼文の「規則の版」の値に置き換える。
@@ -34,6 +34,11 @@ LLMC-FILE id=<ID> path="<相対パス>" base=<sha>
 LLMC-END id=<ID> path="<相対パス>"
 `````
 
+（削除するファイルがあるとき）
+````
+LLMC-DELETE id=<ID> path="<相対パス>"
+````
+
 （変更点の説明、3行以内）
 
 ````
@@ -42,6 +47,6 @@ LLMC-DONE v=1 id=<ID> rev=<規則の版>
 
 SHORT = """# 回答の書式（llmc/1、前回と同じ）
 計画（LLMC-PLAN）→ ファイル全体（LLMC-FILE〜LLMC-END、フェンスはバッククォート4個以上で言語名なし、省略禁止）→ 説明3行以内 → LLMC-DONE。
-ID は「このターンの ID」、base は送られた sha（新規は new）を使う。"""
+ID は「このターンの ID」、base は送られた sha（新規は new）を使う。削除は LLMC-DELETE の1行だけ（LLMC-FILE で囲まない）。"""
 
 REV = hashlib.sha256((LONG + "\n" + SHORT).encode("utf-8")).hexdigest()[:6]
