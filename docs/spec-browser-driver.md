@@ -67,7 +67,7 @@
 | `NotSent` | 送信を確認できない | 再実行（自動では再送しない） |
 | `Timeout(stage)` | 最初の応答、完了、抽出のいずれかの時間切れ | 時間の設定 |
 | `GenerationFailed(message)` | 画面にエラーが表示された | 再実行 |
-| `RateLimited(retry_after?)` | 利用上限の表示 | 待ってから再実行 |
+| `RateLimited(kind, retry_after?)` | 利用上限の表示（`short` / `daily`。11 章） | `short` は待ってから再実行。`daily` は止める |
 | `AgentUnavailable` | 指定のエージェントが開けない | spec-agent の方針に従う |
 | `ModeMismatch` | サイトのモードが設定と違う（Copilot の「職場」と「Web」など） | 画面でモードを直す。送信はしない |
 | `AttachmentRejected` | 添付に失敗した | 本文への埋め込み |
@@ -389,7 +389,7 @@ variants:
 | ログイン切れ | URL がログイン画面のパターンに一致、またはログインを促す表示 | `LoginRequired`。デーモンはログインが必要な状態になり、以降の要求は即座にこのエラーで返す（spec-auth） |
 | 生成の失敗 | 回答の要素の中か近くに `error_banner` が出る、またはその文字が `generation_failed_patterns` に一致 | `GenerationFailed`（画面の文言を添える） |
 | モードの不一致 | `mode.required` が `mode_indicator` に一致しない（Copilot が「Web」になっている、など） | `ModeMismatch`。送信しない。送った内容が Web 検索に使われ得るため |
-| レート制限 | `error_banner` か `system_notice` の文字が `rate_limit_patterns` に一致 | `RateLimited`。表示から待ち時間が読み取れれば添える。自動で待つかは呼び出し元の設定（ループの既定は、上限 30 分まで指数的に待って再試行 3 回） |
+| レート制限 | `error_banner` か `system_notice` の文字が `rate_limit_patterns` に一致。入力欄が無効になったことも手がかりにする | `RateLimited(kind, retry_after?)`。`kind` は `short`（短い間の制限）か `daily`（1 日の上限。`daily_limit_patterns` に一致）。表示から戻る時刻が読み取れれば添える。`short` は呼び出し元の設定で待って再試行（ループの既定は、上限 30 分まで指数的に待って 3 回）。`daily` は再試行せず、ループを止める（spec-loop 11 章）。個人版の `daily` の表示: 「1 日の上限に達しました」「…午前9:00 にもう一度ご確認ください」（2026-11-28）。組織版は未記録 |
 | 応答なし | 6.3 の上限 | `Timeout`。停止ボタンを押す |
 | ブラウザの異常 | Playwright の接続切れ、ページの異常終了 | `BrowserCrashed`。デーモンがブラウザを 1 回だけ起動し直し、要求そのものは失敗として返す |
 | 予期しないダイアログ | `dialog` イベント、画面を覆う表示 | 既知のもの（お知らせなど）はプロファイルの指定で閉じる。閉じるときは**断る側**のボタン（「閉じる」「後で」など）だけを押し、受け入れる側（「確認」「同意」など）は押さない。それ以外は `SelectorMissing` として報告する |
