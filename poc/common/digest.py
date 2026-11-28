@@ -112,6 +112,61 @@ def digest(names: list[str], limit: int = 1800) -> str:
     return "\n".join(out)
 
 
+# ---------------------------------------------------------------- 短い形（--short）
+# 別の PC から打ち直したり、写真から文字を起こしたりしても間違えにくいよう、英数字と記号だけにする。
+# 名前は下の略語に置き換える。略語に無い日本語は「~」にし、特殊な文字（空白・ゼロ幅など）は <16 進> で示す。
+
+ABBR = [  # 長いものから順に置き換える
+    ("中身の比較（代わりの行を戻した後）", "cmp"), ("参考: U+00A0 を空白とみなした比較", "cmpNB"),
+    ("DOM の textContent とコピーの HTML", "domTC"), ("DOM の innerText とコピーの HTML", "domIT"),
+    ("代わりの行の書き返し", "fillback"), ("代わりの行（空白の数）", "fill"), ("回答の中の代わりの行", "fillN"),
+    ("回答の中の空行（そのまま）", "blankN"), ("回答の中のほかの空白だけの行（空白の数）", "wsN"),
+    ("特殊な文字（期待/回答）", "sp"), ("行数（送る/読み戻し）", "n"), ("行数（期待/回答）", "n"), ("差分（先頭 10 行）", "diff"),
+    ("先頭から正しく続いた行", "okL"), ("... だけの行", "dots"), ("完成したブロック", "blk"), ("回答の文字数", "chars"),
+    ("回答まで秒", "sec"), ("合言葉を答えた", "pw"), ("最初に違う行", "d"), ("入力欄の構造", "dom"), ("コピーの HTML", "html"),
+    ("見つかった <pre>", "pres"), ("画面を開く", "open"), ("読み戻し", "r"), ("送る", "s"), ("一致", "eq"),
+    ("空白だけの行", "wsL"), ("タブを含む行", "tabL"), ("行末の空白", "trailL"), ("U+00A0 を含む行", "nbL"),
+    ("空行のまま", "raw"), ("入力の上限", "in"), ("出力の上限", "out"), ("の続き", "+cont"), ("事象", "ev"), ("画面の表示", "msg"),
+    ("画面の様子", "msg"), ("解析", "parse"), ("回答", "ans"), ("準備", "prep"), ("条件", "cond"), ("分類", "k"), ("空行", "blank"),
+    ("行数", "n"), ("文字", "c"), ("行", "L"), ("時間切れ", "timeout"), ("飛ばした", "skip"), ("見つからない", "notfound"),
+    ("代わりの行（空白 ", "f"), (" 個）", ""), ("正しい行", "okL"), ("省略の警告", "W"), ("（約 ", "~"), ("）", ""), ("（", "("), ("：", ":"), ("、", ","),
+]
+SPECIAL_CAT = ("Zs", "Zl", "Zp", "Cf", "Cc")
+
+
+def ascii_only(s: str) -> str:
+    import unicodedata
+    for ja, ab in sorted(ABBR, key=lambda x: -len(x[0])):
+        s = s.replace(ja, ab)
+    out = []
+    for ch in s:
+        if ch.isascii():
+            out.append(ch)
+        elif unicodedata.category(ch) in SPECIAL_CAT:
+            out.append(f"<{ord(ch):x}>")
+        elif not out or out[-1] != "~":
+            out.append("~")
+    return "".join(out)
+
+
+def short_digest(names: list[str], limit: int = 500) -> str:
+    text = digest(names, limit=10_000)
+    out, used, dropped = [], 0, 0
+    for line in text.split("\n"):
+        line = ascii_only(line)
+        line = line.replace("; ", " ").replace("=y", "=Y").replace("=n ", "=N ")
+        if len(line) > 160:
+            line = line[:159] + "~"
+        if used + len(line) + 1 > limit and not line.startswith("#"):
+            dropped += 1
+            continue
+        out.append(line)
+        used += len(line) + 1
+    if dropped:
+        out.append(f"(+{dropped} lines)")
+    return "\n".join(out)
+
+
 def recent(hours: float) -> list[str]:
     t = time.time() - hours * 3600
     files = sorted((p for p in OUT_DIR.glob("*-report.json") if p.stat().st_mtime >= t), key=lambda p: p.stat().st_mtime)
@@ -142,11 +197,18 @@ def main() -> int:
     ap.add_argument("--hours", type=float, default=3)
     ap.add_argument("--limit", type=int, default=1800)
     ap.add_argument("--no-clip", action="store_true")
+    ap.add_argument("--short", action="store_true", help="英数字だけの短い形（別の PC から打ち直す・写真から起こす場合）。既定 500 文字")
     a = ap.parse_args()
     names = a.names or recent(a.hours)
     if not names:
         print("レポートが見つからない", file=sys.stderr)
         return 1
+    if a.short:
+        text = short_digest(names, a.limit if a.limit != 1800 else 500)
+        print("\n----- short digest -----\n" + text + "\n------------------------", file=sys.stderr)
+        if not a.no_clip:
+            to_clipboard(text)
+        return 0
     show(names, a.limit, not a.no_clip)
     return 0
 

@@ -226,4 +226,10 @@ $env:POC_URL = "https://m365.cloud.microsoft/chat"
 .\.venv\Scripts\python.exe common\digest.py poc6-echo-auto poc6-limits-auto --limit 1200
 ```
 
+- **社内 PC など、クリップボードがこの PC とつながっていない場合**は、英数字だけの短い形（既定 500 文字）を使い、打ち直すか写真から起こして貼る。日本語は略語（`cmp`・`par` など）か `~` に、特殊な文字は `<200b>` のように 16 進で示す
+
+```powershell
+.\.venv\Scripts\python.exe common\digest.py --short
+```
+
 - Claude が要約から詳しく知りたい項目を挙げたら、その項目だけを貼る（`out\<名前>-report.md` の該当する行）

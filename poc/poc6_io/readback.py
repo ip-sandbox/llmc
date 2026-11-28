@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import os
 import shutil
 import sys
@@ -35,14 +36,19 @@ READ_JS = r"""(sel) => { const el = document.querySelector(sel);
            tags: Array.from(new Set(Array.from(el.querySelectorAll('*')).map(e => e.tagName.toLowerCase()))).sort() }; }"""
 
 
-def norm_lines(s: str) -> list[str]:
-    return [x.replace(" ", " ").rstrip(" ") for x in s.replace("\r\n", "\n").rstrip("\n").split("\n")]
+ZW_RE = re.compile('[\u200b-\u200d\ufeff]')
 
 
-def compare(want: str, got: str | None) -> dict:
+def norm_lines(s: str, strip_zw: bool = False) -> list[str]:
+    """NBSP を空白に、行末の空白を無視する。strip_zw なら、ゼロ幅文字も除く（入力欄の Lexical がゼロ幅文字を足すため、読み戻しでは送る側からも除いて比べる）。"""
+    s = ZW_RE.sub('', s) if strip_zw else s
+    return [x.replace('\u00a0', ' ').rstrip(' ') for x in s.replace('\r\n', '\n').rstrip('\n').split('\n')]
+
+
+def compare(want: str, got: str | None, strip_zw: bool = False) -> dict:
     if got is None:
         return {"一致": False, "理由": "読めない"}
-    w, g = norm_lines(want), norm_lines(got)
+    w, g = norm_lines(want, strip_zw), norm_lines(got, strip_zw)
     first = next((i for i, (a, b) in enumerate(zip(w, g)) if a != b), None if len(w) == len(g) else min(len(w), len(g)))
     return {"一致": w == g, "行数（送る/読み戻し）": f"{len(w)}/{len(g)}",
             "最初に違う行": None if first is None else {"行": first + 1, "送る": repr(w[first][:40]) if first < len(w) else None,
@@ -86,7 +92,7 @@ def main() -> int:
                 rep.add(label, "入力欄の構造", "INFO", {"<p> の数": r["n_p"], "<br> の数": r["n_br"], "要素": r["tags"],
                                                      "送る行数": t.count("\n") + 1})
                 for how in ("textContent", "innerText", "paragraphs"):
-                    c = compare(t, r[how])
+                    c = compare(t, r[how], strip_zw=True)
                     # 採用する読み方（paragraphs）だけを合否にする。ほかは参考（個人版で合わないと分かっている）
                     if how == "paragraphs":
                         rep.add(label, how, "OK" if c["一致"] else "NG", c)
