@@ -120,7 +120,7 @@ def run_s0(drv: Driver, rep) -> str | None:
                 continue
             body, how = extract(text or "", html)
             c = compare(SAMPLE, body)
-            c.pop("差分（先頭 8 行）") if c["一致"] else None
+            c.pop("差分（先頭 12 行）") if c["一致"] else None
             rep.add(sec, method, "OK" if c["一致"] else "NG",
                     {"入力の文字数（送る本文）": f"{n}（{len(prompt)}）", "回答まで秒": w["seconds"], "取り出し": how,
                      "HTML あり": bool(html), **c})

@@ -56,12 +56,13 @@ def extract(text: str, html_raw: str | None) -> tuple[str | None, str]:
 
 def compare(want: str, got: str) -> dict:
     w, g = want.rstrip("\n").split("\n"), got.rstrip("\n").split("\n")
-    diff = [l for l in difflib.unified_diff(w, g, lineterm="", n=0) if not l.startswith(("---", "+++", "@@"))]
+    # 行の位置（@@ の行）も残し、前後 1 行を付ける。どこで空行が増減したかを分かるようにする
+    diff = [l for l in difflib.unified_diff(w, g, lineterm="", n=1) if not l.startswith(("---", "+++"))]
     return {"一致": w == g, "行数（元/回答）": f"{len(w)}/{len(g)}",
             "空行の数（元/回答）": f"{sum(1 for x in w if x == '')}/{sum(1 for x in g if x == '')}",
             "<br> の行": sum(1 for x in g if x.strip() == "<br>"),
             "空白だけの行": sum(1 for x in g if x and not x.strip()),
-            "差分（先頭 8 行）": [repr(x) for x in diff[:8]]}
+            "差分（先頭 12 行）": [repr(x) for x in diff[:12]]}
 
 
 def main() -> int:
