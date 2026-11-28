@@ -125,7 +125,7 @@ mode:
   required: null           # 例: {indicator_text: "/職場|Work/"}。一致しなければ送信しない（ModeMismatch）
 
 input:
-  modes: [fill, insert_text, paste_event]     # 先頭から試し、読み戻しで確認する
+  modes: [paste_html, fill]                   # PoC の結果、paste_html を第一とする（下の 4.1 の注）
   max_chars: null                             # null = probe で測る
   newline: paste                              # 改行の入れ方（paste / shift_enter）
   readback: textContent                       # 読み戻しに使うプロパティ
@@ -169,6 +169,7 @@ variants:
 | `insert_text` | Playwright の `keyboard.insert_text`。フォーカスのある位置に、1 回の操作で本文を挿入する（`keydown` などのキーのイベントは出ない） | どちらも | 1 文字ずつの入力ではないので速い。改行の扱いはエディタによって違う |
 | `paste_event` | JavaScript で `DataTransfer` に本文を入れ、入力欄に `paste` イベントを送る | 貼り付けを独自に処理するリッチエディタ | **OS のクリップボードを使わない**。エディタが改行を段落にする、長文を「貼り付けたテキスト」の添付に変える、などの変換が起き得る |
 
+- **PoC の結果（docs/poc-findings.md）**: Copilot の入力欄（Lexical）では、空行を含むテキストを `fill` やテキストだけの貼り付けで入れると、AI に届く時点で空行が崩れる（`<br>` という文字になる、または空行が増える）。**貼り付けイベントに `text/plain` と `text/html` の両方を入れ、ファイルの部分を `<pre><code>` にする方法（`paste_html`）だけが、一字一句そのまま届いた**（組織版の自動の方式と、個人版の人が送信する方式の両方で確認）。入力欄の中ではコードのブロックになる。そのため、文脈のファイルを含む本文は `paste_html` で入れる。読み戻しの比較は、入力欄がコードのブロックと段落に分かれるので、`textContent` の全体ではなく、コードのブロックごとの中身と送る文脈の中身を比べる
 - 入力した後に入力欄のテキストを読み戻して、送る本文と比べる。比べるときは **NBSP（U+00A0）を空白に戻し、行末の空白を無視するだけ**とし、行頭の空白とタブは比べる（YAML や Python のインデントの崩れを見逃さないため）。一致しなければ次の方式を試す。全部失敗したら `InputRejected`
 - 送信後に、利用者のメッセージとして表示された本文とも同じ方法で比べ、違えば警告を記録する
 - 長文を貼り付けたときに、画面が本文を添付に自動で変える挙動があるかは probe の調査項目とする。変える場合は、その長さの手前を上限（`max_chars`）とみなす
