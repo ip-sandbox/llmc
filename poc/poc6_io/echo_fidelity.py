@@ -7,6 +7,9 @@
     E2: 空白 1 個・2 個の行を含む YAML（代わりの行は空白 3 個になる）
     E3: 特殊な文字（全角空白、ゼロ幅、EM SPACE など）と、U+00A0 の代わりの記号「⟦U+00A0⟧」が、そのまま返るか
         （E1 で、U+00A0 は送信の時点で普通の空白に変わり、AI に届かないと分かったため）
+    E4: PowerShell の「[名前]::」など（個人版で壊れた）
+    E5: E4 の [ ] を ⟦ ⟧ に置き換えて出させる（AI に届いた時点で壊れているかの切り分け）
+    E6: 壊れる形の規則と、代わりの記号の候補（21 行）
 
 使い方:
   個人版（人が送信する）: .\\.venv\\Scripts\\python.exe poc6_io\\echo_fidelity.py [--only E1]
@@ -47,15 +50,31 @@ E3 = ("# 架空の文字の確認\n" + "".join(f"{k}:[{v}]\n" for k, v in SPECIA
 E4 = ("# 架空の PowerShell のスクリプト\n$x = 3.14159\n$r = [math]::Round($x, 2)\n$s = [string]::Join(',', @('a', 'b'))\n"
       "[int]$n = 5\n[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\nWrite-Output \"[info]: done\"\n"
       "# 参照リンクの形\n[link]: https://example.invalid/path\n[a][b]\n[section]\nkey=value\n")
+# E4 で壊れた（個人版、2026-11-28）: [math]:: → :、"[info]: done" → "done"。[link]: url と [System.Text.Encoding]:: は残った。
+# E5: AI に届いた時点で壊れているか。[ を ⟦、] を ⟧ に置き換えて出させる（⟦math⟧::Round が返れば、届いた時点では壊れていない）
+LB, RB = "⟦", "⟧"
+# E6: 壊れる形の規則と、代わりの記号の候補。各行の末尾の「# Lnn」で行を見分ける（行頭の形を変えないため末尾に置く）
+E6_LINES = [
+    "$a = [math]::Round($x)", "[math]::Round($x)", "[math]:Round", "[math]: Round", "[math] ::Round", "[m]::x", "[1]::x",
+    "[a_b]::x", "[a-b]::x", "[a.b]::x", "[System.Math]::Round($x)", "[math ]::Round", "[[math]]::Round", "x[info]:y",
+    "\"[info]: done\"", "[info]: https://example.invalid/", "`[math]::Round`", "\\[math\\]::Round",
+    "⟦U+005B⟧math]::Round", "[math⟦U+005D⟧::Round", "[math]⟦U+003A⟧:Round",
+]
+E6 = "# 架空の形の確認\n" + "".join(f"{x} # L{i:02d}\n" for i, x in enumerate(E6_LINES, 1))
+ADD = "# 確認済み"
+TASK = (f"送ったファイルの最後に 1 行「{ADD}」を追加してください。それ以外は 1 文字も変えずに、ファイル全体を出力してください。"
+        "空行・空白だけの行・行頭と行末の空白・タブ・特殊な空白もそのまま保ってください。")
+TASK5 = (f"送ったファイルのすべての「[」を「{LB}」に、すべての「]」を「{RB}」に置き換え、最後に 1 行「{ADD}」を追加してください。"
+         "それ以外は 1 文字も変えずに、ファイル全体を出力してください。")
 CASES = {
     "E1": {"path": "docs/sample.md", "text": E1},
     "E2": {"path": "config/sample.yaml", "text": E2},
     "E3": {"path": "docs/chars.md", "text": E3},
     "E4": {"path": "scripts/sample.ps1", "text": E4},
+    "E5": {"path": "scripts/sample.ps1", "text": E4, "task": TASK5,
+           "want": E4.replace("[", LB).replace("]", RB)},
+    "E6": {"path": "scripts/forms.ps1", "text": E6},
 }
-ADD = "# 確認済み"
-TASK = (f"送ったファイルの最後に 1 行「{ADD}」を追加してください。それ以外は 1 文字も変えずに、ファイル全体を出力してください。"
-        "空行・空白だけの行・行頭と行末の空白・タブ・特殊な空白もそのまま保ってください。")
 
 
 def classify(want: list[str], got: list[str]) -> dict:
@@ -115,7 +134,7 @@ def _run(a, rep, sender, pre) -> int:
         (ws / c["path"]).parent.mkdir(parents=True, exist_ok=True)
         (ws / c["path"]).write_bytes(c["text"].encode("utf-8"))
         tid = M.new_tid()
-        sc = {"files": {c["path"]: c["text"]}, "allow": [c["path"]], "task": TASK, "new_chat": True}
+        sc = {"files": {c["path"]: c["text"]}, "allow": [c["path"]], "task": c.get("task", TASK), "new_chat": True}
         prompt, sha, texts = M.build_prompt(tid, sc, ws, long_rules=True)
         filler = choose_filler(texts.values())
         sent = apply_filler(prompt, filler)
@@ -148,7 +167,10 @@ def _run(a, rep, sender, pre) -> int:
             continue
         raw_lines = res.files[0].lines
         restored = restore_filler(raw_lines, filler)
-        want = (c["text"].rstrip("\n") + "\n" + ADD).split("\n")
+        want = (c.get("want", c["text"]).rstrip("\n") + "\n" + ADD).split("\n")
+        broken = [f"{w!r} → {g!r}" for w, g in zip(want, restored) if w != g]
+        if broken:  # 壊れた行をすべて（E4〜E6 の切り分けのため。短縮の要約にも出る）
+            rep.add(sec, "変わった行", "NG", {"数": len(broken), "行": broken})
         rep.add(sec, "代わりの行の書き返し", "INFO",
                 {"代わりの行（空白の数）": len(filler), "回答の中の代わりの行": sum(1 for x in raw_lines if x == filler),
                  "回答の中の空行（そのまま）": sum(1 for x in raw_lines if x == ""),

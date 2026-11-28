@@ -342,6 +342,22 @@ Playwright の同期 API は、API を呼んでいる間しかブラウザから
   - 空行の代わりの行の方式（spec-file-protocol 9.6）は確定とする
   - U+00A0 を含むファイルは、そのまま送ると、書き返しで U+00A0 が黙って空白に変わる。代わりの記号（`⟦U+00A0⟧`）にして送り、そのファイルの中だけで戻す方式を検討する。ほかの特殊な文字（全角空白、ゼロ幅、EM SPACE、U+2028 など）と代わりの記号が保たれるかを E3 で確かめる
 
+#### E4: `[名前]:` の破壊（個人版、2026-11-28、規則の版 f9be67）
+
+- 類似の実装の報告（review-related-projects 3 章）を確かめた。**壊れた**。解析は `complete` で、行数も同じ（13/13）。黙って中身だけが変わるので、書式の検査では見つからない
+- コピーの HTML（`<pre><code>` の中）とテキストの両方で、同じに壊れていた
+
+| 送った行 | 回答 |
+|---|---|
+| `$r = [math]::Round($x, 2)` | `$r = :Round($x, 2)` |
+| `$s = [string]::Join(',', @('a', 'b'))` | `$s = :Join(',', @('a', 'b'))` |
+| `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8` | `:OutputEncoding = [System.Text.Encoding]::UTF8` |
+| `Write-Output "[info]: done"` | `Write-Output "done"`（`[info]: ` が空白ごと消えた） |
+| `[int]$n = 5`、`[link]: https://example.invalid/path`、`[a][b]`、`[section]` | そのまま |
+
+- 「`[` 英数字 `]:`」が、後ろの空白 1 個まで消えると見られる。点を含む `[System.Text.Encoding]::` と、URL が続く `[link]: https://...` は残った
+- 未確定: AI に届く前（送信の時点）に壊れるのか、回答の描画で壊れるのか。E5（`[` `]` を `⟦` `⟧` に置き換えて出させる）で切り分け、E6（21 の形と、代わりの記号の候補 3 つ）で壊れる形の規則を調べる
+
 ### (c) 入力と出力の上限（個人版、人が送信する方式。`poc6_io\limits.py`）
 
 | 種類 | 大きさ | 結果 |
