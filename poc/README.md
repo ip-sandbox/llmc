@@ -257,3 +257,32 @@ $env:POC_URL = "https://m365.cloud.microsoft/chat"
 架空のベンチマーク（llmc が用意する `bench.py`。AI が書くのは設定の YAML だけで、AI のコードは実行しない）のスループットを上げる調整を 10 回依頼する。結果: `out\poc7-loop-report.md`
 
 - 個人版の 1 日の上限に注意。足りなければ `--rounds 5` で減らせる
+
+## PoC-8: 常駐とログインの保持（plan 5.6 の 5。組織版の社内 PC で）
+
+`git pull` の後、poc フォルダで実行する。送信は (b) の `send` だけ（1 回ごとに架空の短い依頼を 1 つ）。記録に本文・画面の文字は残らない。
+
+### (d) ログインの保持（送信しない。日を空けて実行する）
+
+```powershell
+.\.venv\Scripts\python.exe poc8_daemon\login_check.py --url $env:POC_URL
+```
+
+- 今日 1 回、その後 1 日・3 日・7 日くらい空けて、同じコマンドを実行する。毎回、それまでの記録をまとめた要約が出る
+- ログインが切れていたら、`poc1_login\login.py --browser msedge` でログインし直してから続ける（記録は続く）
+
+### (a)(b)(c) 常駐（最小化した画面ありの Edge を、pythonw の別のプロセスで開いたままにする）
+
+```powershell
+.\.venv\Scripts\python.exe poc8_daemon\ctl.py start --url $env:POC_URL   # (a) 起動。この PowerShell を閉じても残るかを見る
+.\.venv\Scripts\python.exe poc8_daemon\ctl.py status                     # 別の PowerShell からでも状態が見える
+.\.venv\Scripts\python.exe poc8_daemon\ctl.py send                       # 最小化したまま 1 回送れるか
+.\.venv\Scripts\python.exe poc8_daemon\ctl.py send --delay 60            # (b) 60 秒の間に Win+L でロックし、3 分ほど待って戻る
+.\.venv\Scripts\python.exe poc8_daemon\ctl.py stop
+.\.venv\Scripts\python.exe poc8_daemon\ctl.py report                     # 最後に要約を貼る
+```
+
+- (a) の続き（できれば）: 常駐の Edge のウィンドウを、タスクバーから開いて元に戻す → `status`。次に、そのウィンドウを × で閉じる → `status` → `send`（開き直して送れるか）
+- (b) の続き（できれば）: RDP で使っている場合は、`send --delay 60` の間に RDP を切断し、数分後につなぎ直す。スリープは、`send --delay 60` の間にスリープし、数分後に復帰する
+- (c) タスクスケジューラ（できれば。先に `stop` しておく）: `ctl.py schedule --url $env:POC_URL`。タスクを作って起動し、60 秒後にタスクを終えて消す。タスクを終えた後も常駐が残るかを記録する。タスクを作れない方針なら、そう表示される
+- 記録の元は `out\poc8\events.jsonl`。やり直すときは `stop` の後にこのフォルダを消す

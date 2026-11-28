@@ -24,6 +24,7 @@
 
 - クライアントは、要求を送る前にパイプにつなぐ。つながらなければデーモンを起動する（FR-COM-06）
   - `pythonw.exe -m llmc.daemon` を `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB` で起動する。`CREATE_BREAKAWAY_FROM_JOB` が拒否された（エラー 5）ら、その旗を外して起動し直す
+  - **venv の `pythonw.exe` は起動用の小さなプログラム**で、本当の Python はその子のプロセスになる。起動用のプログラムは子を自分のジョブに入れる（PoC-8 の準備で確認: 切り離した起動用のプログラムはジョブの外、子の Python はジョブの中と出た）。そのため、確かめる相手は起動用のプログラム（クライアントが起動したプロセス）にする。デーモンが自分で `IsProcessInJob` を見ると、常に「ジョブの中」になる。venv の外の `pythonw.exe`（`sys._base_executable` の側）を直接起動する案は、実装の初期に比べる
   - 起動の後、**デーモンがジョブの外に出られたかを確かめる**（`IsProcessInJob`）。ジョブの中に残った場合は、クライアントが終わるとデーモンも終わる恐れがあるので、警告する（「タスクスケジューラなどから使う場合は、先に `llmc daemon start` を別に実行しておく」）。止めはしない
   - 起動を待つのは最大 60 秒（NFR-02 の目標は 30 秒）。デーモンは、パイプを作った時点で `starting` を返せるようにし、ブラウザの準備ができたら `ready` にする
 - 利用者が明示して起動する: `llmc daemon start`（前面のコンソールで動かす `--foreground` は開発用）
