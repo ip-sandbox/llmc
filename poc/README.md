@@ -139,6 +139,14 @@ py -m venv .venv            # py が無ければ python -m venv .venv
 
 3 回（A テキスト / B 空行を空白 1 文字に / C テキスト＋HTML）、それぞれ**新しいチャット**に貼り付けて送信し、回答の「コピー」を押す。貼り付けた直後の入力欄の見た目（空行が残っているか、コードの枠になったか）も教えてほしい。結果: `out\manual-probe-input-report.md`
 
+### S0b: フェンスの書き方ごとに、コードブロックとして表示されるかの診断
+
+```powershell
+.\.venv\Scripts\python.exe manual\probe_fence.py
+```
+
+1 回だけ。**新しいチャット**に貼り付けて送信し、回答の「コピー」を押す。バッククォート 3/4/5 個、言語名の有無、チルダの 10 通りについて、コピーの HTML が `<pre>`（コードブロック）になったか、`__init__` が太字に変わったかを記録する。回答の画面で、どの番号が枠付きのコードブロックに見えたかも教えてほしい。結果: `out\manual-probe-fence-report.md`
+
 保存した回答の再解析（Copilot には接続しない）: `.\.venv\Scripts\python.exe manual\run.py --replay`
 
 ## PoC-3（自動の方式）: 組織版での書式の往復（社内 PC）

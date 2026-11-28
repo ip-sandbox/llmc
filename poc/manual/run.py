@@ -137,14 +137,21 @@ def wait_response(tid: str, use_clip: bool, timeout: float = 1800) -> tuple[str,
             t = clip.get_text()
         except OSError:
             continue
-        if t and tid.upper() in t.upper() and "LLMC-CTX path=" not in t:
+        # run.py 自身のコンソールの出力（ID を含む）をコピーしたものは回答として扱わない
+        console = "manual\\run.py" in t or "試行 1（ID" in t if t else False
+        if t and tid.upper() in t.upper() and "LLMC-CTX path=" not in t and not console:
             try:
                 h = clip.get_html()
             except OSError:
                 h = None
             return t, h
         if t:
-            print("  （ID を含まないコピーを無視しました）", file=sys.stderr)
+            why = "コンソールの出力の" if console else ("ID を含まない" if tid.upper() not in t.upper() else "プロンプトの")
+            print(f"  （{why}コピーを無視しました: {len(t)} 文字, 先頭 {t.strip()[:40]!r}）", file=sys.stderr)
+            if "LLMC" in t and not console:
+                ign = OUT_DIR / "manual" / f"ignored-{tid}-{int(time.time())}.txt"
+                ign.write_bytes(t.encode("utf-8"))
+                print(f"    LLMC を含むため保存しました: {ign}", file=sys.stderr)
     return None
 
 
